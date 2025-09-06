@@ -1,0 +1,694 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App de Aprendizaje - Repaso Espaciado</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue-draggable-next@2.2.1/dist/vue-draggable-next.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center font-sans">
+  <div id="app" class="container mx-auto p-4 max-w-4xl">
+    <!-- Header -->
+    <header class="bg-white shadow rounded-lg p-6 mb-6 text-center">
+      <h1 class="text-3xl font-bold text-gray-800">Aprende con Repaso Espaciado</h1>
+      <p class="text-gray-600 mt-2">¡Practica tus conocimientos como en Duolingo!</p>
+      <p class="text-blue-600 font-semibold mt-2">Puntos totales: {{ puntosTotales }}</p>
+      <div class="mt-2 flex justify-center space-x-2">
+        <span v-for="insignia in insignias" :key="insignia" class="px-2 py-1 bg-yellow-200 rounded-full text-sm">{{ insignia }}</span>
+      </div>
+    </header>
+
+    <!-- Tabs para navegación -->
+    <nav class="mb-6">
+      <button @click="vistaActual = 'diario'; temaSeleccionado = null; cerrarModal()"
+              :class="['py-2 px-4 rounded-t-lg', vistaActual === 'diario' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800']"
+              class="hover:bg-blue-400 hover:text-white transition-colors">
+        Diario
+      </button>
+      <button @click="vistaActual = 'explorar'; temaSeleccionado = null; cerrarModal()"
+              :class="['py-2 px-4 rounded-t-lg', vistaActual === 'explorar' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800']"
+              class="hover:bg-blue-400 hover:text-white transition-colors">
+        Explorar Áreas
+      </button>
+      <button @click="vistaActual = 'progresos'; cerrarModal()"
+              :class="['py-2 px-4 rounded-t-lg', vistaActual === 'progresos' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800']"
+              class="hover:bg-blue-400 hover:text-white transition-colors">
+        Mis Progresos
+      </button>
+    </nav>
+
+    <!-- Modal para feedback -->
+    <div v-if="mostrarModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full text-center">
+        <h3 class="text-xl font-semibold" :class="modalEsCorrecto ? 'text-green-600' : 'text-red-600'">
+          {{ modalEsCorrecto ? '¡Correcto!' : 'Incorrecto' }}
+        </h3>
+        <p class="text-gray-600 mt-2">
+          {{ modalEsCorrecto ? 'Has subido al nivel ' + modalNivel : 'Vuelves al nivel 1.' }}
+        </p>
+        <button v-if="vistaActual === 'cuestionario' && preguntaActualIndex < preguntasCuestionario.length - 1"
+                @click="siguientePregunta"
+                class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+          Siguiente Pregunta
+        </button>
+        <button v-else
+                @click="finalizarRespuesta"
+                class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+          {{ vistaActual === 'cuestionario' ? 'Finalizar Cuestionario' : 'Continuar' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal para confirmar reseteo -->
+    <div v-if="mostrarModalReset" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full text-center">
+        <h3 class="text-xl font-semibold text-gray-800">¿Resetear Progresos?</h3>
+        <p class="text-gray-600 mt-2">Esto pondrá todas las preguntas en nivel 1 y las hará pendientes.</p>
+        <div class="mt-4 flex justify-center space-x-4">
+          <button @click="confirmarReset"
+                  class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+            Confirmar
+          </button>
+          <button @click="mostrarModalReset = false"
+                  class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vista Diario -->
+    <section v-if="vistaActual === 'diario'" class="bg-white shadow rounded-lg p-6 mb-6">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Preguntas de Hoy ({{ preguntasPendientes.length }})</h2>
+      <div v-if="preguntasPendientes.length > 0" class="space-y-6">
+        <div v-for="(pregunta, index) in preguntasPendientes" :key="pregunta.id"
+             :class="['p-6 rounded-lg shadow-md transition-transform transform hover:scale-105', getAreaColor(getAreaId(pregunta.temaId))]">
+          <h3 class="text-xl font-semibold text-gray-800">{{ pregunta.texto }}</h3>
+          <p class="text-sm text-gray-500 mb-2">Área: {{ getAreaNombre(getAreaId(pregunta.temaId)) }} | Nivel: {{ getNivel(pregunta.id) }}</p>
+          <component :is="getComponentForType(pregunta.tipo)" :pregunta="pregunta" @respuesta="handleRespuesta($event, pregunta)"></component>
+          <button @click="responderPregunta(pregunta, respuestaSeleccionada[pregunta.id])"
+                  :disabled="!respuestaSeleccionada[pregunta.id]"
+                  class="mt-4 w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
+            Responder
+          </button>
+        </div>
+      </div>
+      <div v-else class="text-center p-6 bg-green-100 rounded-lg">
+        <p class="text-lg font-semibold text-green-800">¡No hay preguntas pendientes hoy! 🎉</p>
+      </div>
+    </section>
+
+    <!-- Vista Explorar -->
+    <section v-if="vistaActual === 'explorar'" class="bg-white shadow rounded-lg p-6 mb-6">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Explorar Áreas</h2>
+      <div class="space-y-4">
+        <div v-for="area in areas" :key="area.id">
+          <button @click="toggleExpand('area', area.id)"
+                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(area.id)]"
+                  class="hover:opacity-90 transition-opacity">
+            {{ area.nombre }} (Progreso: {{ calcularProgresoArea(area.id) }}%)
+          </button>
+          <div v-if="expanded.area[area.id]" class="ml-4 space-y-2 mt-2">
+            <div v-for="conocimiento in getConocimientosByArea(area.id)" :key="conocimiento.id">
+              <button @click="toggleExpand('conocimiento', conocimiento.id)"
+                      class="w-full py-2 px-3 text-left rounded-lg bg-gray-50 hover:bg-gray-100">
+                {{ conocimiento.nombre }}
+              </button>
+              <div v-if="expanded.conocimiento[conocimiento.id]" class="ml-4 space-y-2 mt-2">
+                <div v-for="tema in getTemasByConocimiento(conocimiento.id)" :key="tema.id">
+                  <div class="flex justify-between items-center">
+                    <button @click="toggleExpand('tema', tema.id)"
+                            class="w-full py-2 px-3 text-left rounded-lg bg-gray-100 hover:bg-gray-200">
+                      {{ tema.nombre }}
+                    </button>
+                    <button @click="iniciarCuestionario(tema.id)"
+                            class="py-1 px-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                      Hacer Cuestionario
+                    </button>
+                  </div>
+                  <div v-if="expanded.tema[tema.id]" class="ml-4 space-y-2 mt-2">
+                    <div v-for="pregunta in getPreguntasByTema(tema.id)" :key="pregunta.id"
+                         class="p-4 bg-white rounded-lg shadow">
+                      <h4 class="font-medium">{{ pregunta.texto }}</h4>
+                      <p class="text-sm text-gray-500">Nivel actual: {{ getNivel(pregunta.id) }}</p>
+                      <p class="text-sm text-gray-500">Tipo: {{ pregunta.tipo }}</p>
+                      <div v-if="pregunta.tipo === 'multiple'" class="text-sm text-gray-600">
+                        Opciones: {{ Object.values(pregunta.opciones).join(', ') }}
+                        <br>Correcta: {{ pregunta.opciones[pregunta.correcta] }}
+                      </div>
+                      <div v-if="pregunta.tipo === 'order'" class="text-sm text-gray-600">
+                        Elementos a ordenar: {{ pregunta.elementos.join(', ') }}
+                        <br>Orden correcto: {{ pregunta.ordenCorrecto.join(', ') }}
+                      </div>
+                      <div v-if="pregunta.tipo === 'keywords'" class="text-sm text-gray-600">
+                        Texto: {{ pregunta.textoBase }}
+                        <br>Palabras clave: {{ pregunta.keywords.join(', ') }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Vista Cuestionario -->
+    <section v-if="vistaActual === 'cuestionario'" class="bg-white shadow rounded-lg p-6 mb-6">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4">
+        Cuestionario: {{ getTemaNombre(temaSeleccionado) }} (Pregunta {{ preguntaActualIndex + 1 }} / {{ preguntasCuestionario.length }})
+      </h2>
+      <div v-if="preguntaActualIndex < preguntasCuestionario.length" class="space-y-6">
+        <div :class="['p-6 rounded-lg shadow-md', getAreaColor(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId))]">
+          <h3 class="text-xl font-semibold text-gray-800">{{ preguntasCuestionario[preguntaActualIndex].texto }}</h3>
+          <p class="text-sm text-gray-500 mb-2">Área: {{ getAreaNombre(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId)) }} | Nivel: {{ getNivel(preguntasCuestionario[preguntaActualIndex].id) }}</p>
+          <component :is="getComponentForType(preguntasCuestionario[preguntaActualIndex].tipo)" :pregunta="preguntasCuestionario[preguntaActualIndex]" @respuesta="handleRespuesta($event, preguntasCuestionario[preguntaActualIndex])"></component>
+          <button @click="responderPregunta(preguntasCuestionario[preguntaActualIndex], respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex].id])"
+                  :disabled="!respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex].id]"
+                  class="mt-4 w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
+            Responder
+          </button>
+        </div>
+      </div>
+      <div v-else class="text-center p-6 bg-green-100 rounded-lg">
+        <p class="text-lg font-semibold text-green-800">¡Cuestionario completado! 🎉</p>
+        <p class="text-gray-600 mt-2">Progreso en {{ getTemaNombre(temaSeleccionado) }}: {{ calcularProgresoTema(temaSeleccionado) }}%</p>
+        <button @click="vistaActual = 'explorar'; temaSeleccionado = null; preguntaActualIndex = 0; cerrarModal()"
+                class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+          Volver a Explorar
+        </button>
+      </div>
+    </section>
+
+    <!-- Vista Progresos -->
+    <section v-if="vistaActual === 'progresos'" class="bg-white shadow rounded-lg p-6 mb-6">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Mis Progresos por Pregunta</h2>
+      <table class="w-full border-collapse">
+        <thead>
+          <tr class="bg-gray-200">
+            <th class="p-2 text-left">Pregunta</th>
+            <th class="p-2 text-left">Tema</th>
+            <th class="p-2 text-left">Nivel</th>
+            <th class="p-2 text-left">Último Repaso</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="prog in progresos" :key="prog.id" class="border-t">
+            <td class="p-2">{{ getPreguntaTexto(prog.id) }}</td>
+            <td class="p-2">{{ getTemaNombre(getPreguntaTemaId(prog.id)) }}</td>
+            <td class="p-2">{{ prog.nivel }}</td>
+            <td class="p-2">{{ new Date(prog.ultimaRepaso).toLocaleDateString() }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Estadísticas -->
+    <section class="bg-white shadow rounded-lg p-6">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Progreso por Área</h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div v-for="area in areas" :key="area.id" class="p-4 rounded-lg shadow"
+             :class="getAreaColor(area.id)">
+          <h3 class="text-lg font-semibold text-gray-800">{{ area.nombre }}</h3>
+          <p class="text-gray-600">Progreso: {{ calcularProgresoArea(area.id) }}%</p>
+          <p class="text-gray-600">Aprendidas: {{ contarAprendidasArea(area.id) }} / {{ contarPreguntasArea(area.id) }}</p>
+          <div class="mt-2 bg-gray-200 rounded-full h-2.5">
+            <div :class="['h-2.5 rounded-full', getAreaColor(area.id)]"
+                 :style="{ width: calcularProgresoArea(area.id) + '%' }"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Botón Reset -->
+    <div class="text-center mt-6">
+      <button @click="mostrarModalReset = true"
+              class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+        Resetear Progresos
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted, reactive } = Vue;
+
+    // Verificar carga de VueDraggableNext
+    console.log('VueDraggableNext loaded:', typeof window.VueDraggableNext !== 'undefined');
+
+    createApp({
+      setup() {
+        // Datos de prueba con más tipos
+        const areas = ref([
+          { id: 1, nombre: 'Agile', color: 'bg-green-200' },
+          { id: 2, nombre: 'Lean', color: 'bg-blue-200' }
+        ]);
+
+        const conocimientos = ref([
+          { id: 1, areaId: 1, nombre: 'Scrum Básico' },
+          { id: 2, areaId: 2, nombre: 'Principios Lean' }
+        ]);
+
+        const temas = ref([
+          { id: 1, conocimientoId: 1, nombre: 'Roles en Scrum' },
+          { id: 2, conocimientoId: 2, nombre: 'Eliminación de Desperdicios' }
+        ]);
+
+        const preguntas = ref([
+          {
+            id: 1,
+            temaId: 1,
+            tipo: 'multiple',
+            texto: '¿Cuál es el rol responsable de maximizar el valor del producto?',
+            opciones: { a: 'Scrum Master', b: 'Product Owner', c: 'Development Team', d: 'Stakeholder' },
+            correcta: 'b'
+          },
+          {
+            id: 2,
+            temaId: 1,
+            tipo: 'order',
+            texto: 'Ordena los eventos de Scrum en secuencia:',
+            elementos: ['Sprint Review', 'Sprint Planning', 'Sprint Retrospective', 'Daily Scrum'],
+            ordenCorrecto: ['Sprint Planning', 'Daily Scrum', 'Sprint Review', 'Sprint Retrospective']
+          },
+          {
+            id: 3,
+            temaId: 2,
+            tipo: 'keywords',
+            texto: 'Encuentra las palabras clave en el siguiente texto:',
+            textoBase: 'Lean se enfoca en eliminar desperdicios como overproduction, waiting y defects para mejorar la eficiencia.',
+            keywords: ['overproduction', 'waiting', 'defects']
+          }
+        ]);
+
+        // Progresos y gamificación
+        const progresos = ref([]);
+        const respuestaSeleccionada = reactive({});
+        const mostrarModal = ref(false);
+        const modalEsCorrecto = ref(false);
+        const modalNivel = ref(0);
+        const mostrarModalReset = ref(false);
+        const puntosTotales = ref(0);
+        const insignias = ref([]);
+
+        // Estado para vistas
+        const vistaActual = ref('diario');
+        const temaSeleccionado = ref(null);
+        const preguntaActualIndex = ref(0);
+        const preguntasCuestionario = ref([]);
+
+        // Expandir secciones en explorar
+        const expanded = ref({
+          area: {},
+          conocimiento: {},
+          tema: {}
+        });
+
+        const toggleExpand = (tipo, id) => {
+          expanded.value[tipo][id] = !expanded.value[tipo][id];
+        };
+
+        // Iniciar cuestionario
+        const iniciarCuestionario = (temaId) => {
+          temaSeleccionado.value = temaId;
+          preguntasCuestionario.value = getPreguntasByTema(temaId);
+          preguntaActualIndex.value = 0;
+          vistaActual.value = 'cuestionario';
+          cerrarModal();
+        };
+
+        // Intervalos de repaso
+        const getIntervalo = (nivel) => {
+          const intervalos = {
+            1: 0,
+            2: 1,
+            3: 2,
+            4: 7,
+            5: 14,
+            6: 30,
+            7: 90,
+            8: 180,
+            9: 365
+          };
+          return (intervalos[nivel] || 0) * 24 * 60 * 60 * 1000;
+        };
+
+        // Cargar progresos y gamificación
+        onMounted(() => {
+          const savedProgresos = localStorage.getItem('progresos');
+          const savedPuntos = localStorage.getItem('puntos');
+          const savedInsignias = localStorage.getItem('insignias');
+          if (savedProgresos) {
+            progresos.value = JSON.parse(savedProgresos);
+          } else {
+            progresos.value = preguntas.value.map(p => ({
+              id: p.id,
+              nivel: 1,
+              ultimaRepaso: new Date(0).toISOString(),
+              aciertosConsecutivos: 0
+            }));
+          }
+          puntosTotales.value = savedPuntos ? parseInt(savedPuntos) : 0;
+          insignias.value = savedInsignias ? JSON.parse(savedInsignias) : [];
+          calcularPendientes();
+          actualizarInsignias();
+        });
+
+        const guardarProgresos = () => {
+          localStorage.setItem('progresos', JSON.stringify(progresos.value));
+          localStorage.setItem('puntos', puntosTotales.value);
+          localStorage.setItem('insignias', JSON.stringify(insignias.value));
+        };
+
+        // Preguntas pendientes
+        const preguntasPendientes = ref([]);
+        const calcularPendientes = () => {
+          const hoy = new Date();
+          progresos.value.forEach(prog => {
+            const pregunta = preguntas.value.find(p => p.id === prog.id);
+            if (!pregunta) return;
+            const ultima = new Date(prog.ultimaRepaso);
+            const proxima = new Date(ultima.getTime() + getIntervalo(prog.nivel));
+            prog.pendiente = hoy >= proxima && prog.nivel < 10;
+          });
+          preguntasPendientes.value = progresos.value
+            .filter(prog => prog.pendiente)
+            .map(prog => preguntas.value.find(p => p.id === prog.id));
+        };
+
+        // Responder pregunta
+        const responderPregunta = (pregunta, respuestaUsuario) => {
+          const prog = progresos.value.find(p => p.id === pregunta.id);
+          let acierto = false;
+          if (pregunta.tipo === 'multiple') {
+            acierto = respuestaUsuario === pregunta.correcta;
+          } else if (pregunta.tipo === 'order') {
+            if (typeof respuestaUsuario === 'string') {
+              // Fallback: procesar entrada de texto (e.g., "1,2,3,4")
+              const indices = respuestaUsuario.split(',').map(i => parseInt(i.trim()) - 1);
+              const ordenUsuario = indices.map(i => pregunta.elementos[i]).filter(e => e);
+              acierto = JSON.stringify(ordenUsuario) === JSON.stringify(pregunta.ordenCorrecto);
+            } else {
+              acierto = JSON.stringify(respuestaUsuario) === JSON.stringify(pregunta.ordenCorrecto);
+            }
+          } else if (pregunta.tipo === 'keywords') {
+            const userKeywords = respuestaUsuario.toLowerCase().split(',').map(k => k.trim());
+            acierto = pregunta.keywords.every(k => userKeywords.includes(k.toLowerCase())) && userKeywords.length === pregunta.keywords.length;
+          }
+          if (acierto) {
+            prog.nivel = Math.min(prog.nivel + 1, 10);
+            prog.aciertosConsecutivos++;
+            modalEsCorrecto.value = true;
+            modalNivel.value = prog.nivel;
+            puntosTotales.value += 10; // Gamificación: +10 puntos por acierto
+            confetti({ particleCount: 100, spread: 70 }); // Confeti
+          } else {
+            prog.nivel = 1;
+            prog.aciertosConsecutivos = 0;
+            modalEsCorrecto.value = false;
+            modalNivel.value = 1;
+          }
+          prog.ultimaRepaso = new Date().toISOString();
+          guardarProgresos();
+          calcularPendientes();
+          mostrarModal.value = true;
+          respuestaSeleccionada[pregunta.id] = null;
+          actualizarInsignias();
+        };
+
+        const siguientePregunta = () => {
+          preguntaActualIndex.value++;
+          cerrarModal();
+        };
+
+        const finalizarRespuesta = () => {
+          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length - 1) {
+            preguntaActualIndex.value++;
+            if (calcularProgresoTema(temaSeleccionado.value) === 100) {
+              insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value)); // Insignia por completar tema
+              guardarProgresos();
+            }
+          }
+          cerrarModal();
+        };
+
+        const cerrarModal = () => {
+          mostrarModal.value = false;
+        };
+
+        // Componentes para tipos de preguntas
+        const getComponentForType = (tipo) => {
+          if (tipo === 'multiple') {
+            return {
+              props: ['pregunta'],
+              template: `
+                <div class="space-y-2">
+                  <label v-for="(opcion, key) in pregunta.opciones" :key="key" class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer">
+                    <input type="radio" v-model="$parent.respuestaSeleccionada[pregunta.id]" :value="key" class="mr-2 text-blue-500 focus:ring-blue-500">
+                    <span class="text-gray-700">{{ opcion }}</span>
+                  </label>
+                </div>
+              `
+            };
+          } else if (tipo === 'order') {
+            if (window.VueDraggableNext && window.VueDraggableNext.draggable) {
+              return {
+                props: ['pregunta'],
+                components: { draggable: window.VueDraggableNext.draggable },
+                data() {
+                  return { lista: [...this.pregunta.elementos] };
+                },
+                methods: {
+                  onDragEnd() {
+                    this.$emit('respuesta', this.lista);
+                  }
+                },
+                template: `
+                  <draggable v-model="lista" item-key="item" @end="onDragEnd" class="space-y-2">
+                    <template #item="{ element }">
+                      <div class="p-3 bg-gray-50 rounded-lg cursor-move">{{ element }}</div>
+                    </template>
+                  </draggable>
+                `
+              };
+            } else {
+              // Fallback: entrada de texto para ordenar
+              return {
+                props: ['pregunta'],
+                template: `
+                  <div>
+                    <p class="mb-2">Ingresa los números en el orden correcto (e.g., 1,2,3,4):</p>
+                    <ul class="mb-2">
+                      <li v-for="(item, index) in pregunta.elementos" :key="index" class="text-gray-700">{{ index + 1 }}. {{ item }}</li>
+                    </ul>
+                    <input type="text" v-model="$parent.respuestaSeleccionada[pregunta.id]" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
+                  </div>
+                `
+              };
+            }
+          } else if (tipo === 'keywords') {
+            return {
+              props: ['pregunta'],
+              template: `
+                <div>
+                  <p class="mb-2">{{ pregunta.textoBase }}</p>
+                  <input type="text" v-model="$parent.respuestaSeleccionada[pregunta.id]" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
+                </div>
+              `
+            };
+          }
+        };
+
+        const handleRespuesta = (respuesta, pregunta) => {
+          respuestaSeleccionada[pregunta.id] = respuesta;
+        };
+
+        // Helpers para áreas y navegación
+        const getAreaId = (temaId) => {
+          const tema = temas.value.find(t => t.id === temaId);
+          const conocimiento = conocimientos.value.find(c => c.id === tema?.conocimientoId);
+          return conocimiento?.areaId;
+        };
+
+        const getAreaNombre = (areaId) => {
+          const area = areas.value.find(a => a.id === areaId);
+          return area ? area.nombre : '';
+        };
+
+        const getAreaColor = (areaId) => {
+          const area = areas.value.find(a => a.id === areaId);
+          return area ? area.color : 'bg-gray-200';
+        };
+
+        const getNivel = (preguntaId) => {
+          const prog = progresos.value.find(p => p.id === preguntaId);
+          return prog ? prog.nivel : 1;
+        };
+
+        const getConocimientosByArea = (areaId) => {
+          return conocimientos.value.filter(c => c.areaId === areaId);
+        };
+
+        const getTemasByConocimiento = (conocimientoId) => {
+          return temas.value.filter(t => t.conocimientoId === conocimientoId);
+        };
+
+        const getPreguntasByTema = (temaId) => {
+          return preguntas.value.filter(p => p.temaId === temaId);
+        };
+
+        const getTemaNombre = (temaId) => {
+          const tema = temas.value.find(t => t.id === temaId);
+          return tema ? tema.nombre : '';
+        };
+
+        const calcularProgresoTema = (temaId) => {
+          const preguntasTema = getPreguntasByTema(temaId);
+          const total = preguntasTema.length;
+          const aprendidas = progresos.value.filter(p => preguntasTema.some(q => q.id === p.id) && p.nivel >= 10).length;
+          return total > 0 ? Math.round((aprendidas / total) * 100) : 0;
+        };
+
+        const getPreguntaTexto = (preguntaId) => {
+          const pregunta = preguntas.value.find(p => p.id === preguntaId);
+          return pregunta ? pregunta.texto : '';
+        };
+
+        const getPreguntaTemaId = (preguntaId) => {
+          const pregunta = preguntas.value.find(p => p.id === preguntaId);
+          return pregunta ? pregunta.temaId : null;
+        };
+
+        // Stats
+        const contarPreguntasArea = (areaId) => {
+          const conocs = conocimientos.value.filter(c => c.areaId === areaId);
+          const temasArea = temas.value.filter(t => conocs.some(c => c.id === t.conocimientoId));
+          return preguntas.value.filter(p => temasArea.some(t => t.id === p.temaId)).length;
+        };
+
+        const contarAprendidasArea = (areaId) => {
+          const conocs = conocimientos.value.filter(c => c.areaId === areaId);
+          const temasArea = temas.value.filter(t => conocs.some(c => c.id === t.conocimientoId));
+          const pregIds = preguntas.value.filter(p => temasArea.some(t => t.id === p.temaId)).map(p => p.id);
+          return progresos.value.filter(p => pregIds.includes(p.id) && p.nivel >= 10).length;
+        };
+
+        const calcularProgresoArea = (areaId) => {
+          const total = contarPreguntasArea(areaId);
+          const aprendidas = contarAprendidasArea(areaId);
+          return total > 0 ? Math.round((aprendidas / total) * 100) : 0;
+        };
+
+        const actualizarInsignias = () => {
+          temas.value.forEach(tema => {
+            if (calcularProgresoTema(tema.id) === 100 && !insignias.value.includes('Maestro de ' + tema.nombre)) {
+              insignias.value.push('Maestro de ' + tema.nombre);
+            }
+          });
+        };
+
+        // Reset
+        const confirmarReset = () => {
+          progresos.value = preguntas.value.map(p => ({
+            id: p.id,
+            nivel: 1,
+            ultimaRepaso: new Date(0).toISOString(),
+            aciertosConsecutivos: 0
+          }));
+          puntosTotales.value = 0;
+          insignias.value = [];
+          guardarProgresos();
+          calcularPendientes();
+          mostrarModalReset.value = false;
+        };
+
+        return {
+          areas,
+          conocimientos,
+          temas,
+          preguntas,
+          progresos,
+          preguntasPendientes,
+          respuestaSeleccionada,
+          vistaActual,
+          expanded,
+          temaSeleccionado,
+          preguntaActualIndex,
+          preguntasCuestionario,
+          mostrarModal,
+          modalEsCorrecto,
+          modalNivel,
+          mostrarModalReset,
+          puntosTotales,
+          insignias,
+          toggleExpand,
+          iniciarCuestionario,
+          responderPregunta,
+          siguientePregunta,
+          finalizarRespuesta,
+          cerrarModal,
+          confirmarReset,
+          calcularProgresoArea,
+          contarAprendidasArea,
+          contarPreguntasArea,
+          calcularProgresoTema,
+          getAreaId,
+          getAreaNombre,
+          getAreaColor,
+          getNivel,
+          getConocimientosByArea,
+          getTemasByConocimiento,
+          getPreguntasByTema,
+          getTemaNombre,
+          getPreguntaTexto,
+          getPreguntaTemaId,
+          getComponentForType,
+          handleRespuesta
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
