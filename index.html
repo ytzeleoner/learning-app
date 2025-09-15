@@ -49,6 +49,12 @@
         <p class="text-gray-600 mt-2">
           {{ modalEsCorrecto ? 'Has subido al nivel ' + modalNivel : 'Vuelves al nivel 1.' }}
         </p>
+        <div v-if="preguntaActual" class="mt-4 text-left">
+          <p class="text-gray-700"><strong>Pregunta:</strong> {{ preguntaActual.texto }}</p>
+          <p class="text-gray-700"><strong>Tu respuesta:</strong> {{ getRespuestaUsuario(preguntaActual, respuestaSeleccionada[preguntaActual.id]) }}</p>
+          <p class="text-gray-700"><strong>Respuesta correcta:</strong> {{ getRespuestaCorrecta(preguntaActual) }}</p>
+          <p class="text-gray-700"><strong>Explicación:</strong> {{ preguntaActual.explanation || 'No hay explicación disponible.' }}</p>
+        </div>
         <button v-if="vistaActual === 'cuestionario' && preguntaActualIndex < preguntasCuestionario.length - 1"
                 @click="siguientePregunta"
                 class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
@@ -241,7 +247,7 @@
 
     createApp({
       setup() {
-        // Datos de prueba con más tipos
+        // Datos de prueba con más tipos y explicaciones
         const areas = ref([
           { id: 1, nombre: 'Agile', color: 'bg-green-200' },
           { id: 2, nombre: 'Lean', color: 'bg-blue-200' }
@@ -264,7 +270,8 @@
             tipo: 'multiple',
             texto: '¿Cuál es el rol responsable de maximizar el valor del producto?',
             opciones: { a: 'Scrum Master', b: 'Product Owner', c: 'Development Team', d: 'Stakeholder' },
-            correcta: 'b'
+            correcta: 'b',
+            explanation: 'El Product Owner es responsable de maximizar el valor del producto al priorizar el trabajo del equipo según las necesidades del negocio.'
           },
           {
             id: 2,
@@ -272,7 +279,8 @@
             tipo: 'order',
             texto: 'Ordena los eventos de Scrum en secuencia:',
             elementos: ['Sprint Review', 'Sprint Planning', 'Sprint Retrospective', 'Daily Scrum'],
-            ordenCorrecto: ['Sprint Planning', 'Daily Scrum', 'Sprint Review', 'Sprint Retrospective']
+            ordenCorrecto: ['Sprint Planning', 'Daily Scrum', 'Sprint Review', 'Sprint Retrospective'],
+            explanation: 'En Scrum, los eventos siguen este orden: Sprint Planning inicia el sprint, Daily Scrum ocurre diariamente, Sprint Review evalúa el incremento, y Sprint Retrospective cierra el sprint con reflexiones.'
           },
           {
             id: 3,
@@ -280,7 +288,8 @@
             tipo: 'keywords',
             texto: 'Encuentra las palabras clave en el siguiente texto:',
             textoBase: 'Lean se enfoca en eliminar desperdicios como overproduction, waiting y defects para mejorar la eficiencia.',
-            keywords: ['overproduction', 'waiting', 'defects']
+            keywords: ['overproduction', 'waiting', 'defects'],
+            explanation: 'Lean identifica siete tipos de desperdicios, incluyendo overproduction (producir más de lo necesario), waiting (esperas innecesarias), y defects (errores que requieren corrección).'
           }
         ]);
 
@@ -293,6 +302,7 @@
         const mostrarModalReset = ref(false);
         const puntosTotales = ref(0);
         const insignias = ref([]);
+        const preguntaActual = ref(null);
 
         // Estado para vistas
         const vistaActual = ref('diario');
@@ -318,7 +328,6 @@
           preguntaActualIndex.value = 0;
           vistaActual.value = 'cuestionario';
           cerrarModal();
-          // Forzar scroll al inicio
           window.scrollTo(0, 0);
         };
 
@@ -357,7 +366,6 @@
           insignias.value = savedInsignias ? JSON.parse(savedInsignias) : [];
           calcularPendientes();
           actualizarInsignias();
-          // Forzar scroll al inicio al cargar la página
           window.scrollTo(0, 0);
         });
 
@@ -383,15 +391,44 @@
             .map(prog => preguntas.value.find(p => p.id === prog.id));
         };
 
+        // Obtener respuesta del usuario en formato legible
+        const getRespuestaUsuario = (pregunta, respuesta) => {
+          if (!respuesta) return 'No respondida';
+          if (pregunta.tipo === 'multiple') {
+            return pregunta.opciones[respuesta] || 'Desconocida';
+          } else if (pregunta.tipo === 'order') {
+            if (typeof respuesta === 'string') {
+              const indices = respuesta.split(',').map(i => parseInt(i.trim()) - 1);
+              return indices.map(i => pregunta.elementos[i]).filter(e => e).join(', ');
+            }
+            return respuesta.join(', ');
+          } else if (pregunta.tipo === 'keywords') {
+            return respuesta;
+          }
+          return 'Desconocida';
+        };
+
+        // Obtener respuesta correcta en formato legible
+        const getRespuestaCorrecta = (pregunta) => {
+          if (pregunta.tipo === 'multiple') {
+            return pregunta.opciones[pregunta.correcta];
+          } else if (pregunta.tipo === 'order') {
+            return pregunta.ordenCorrecto.join(', ');
+          } else if (pregunta.tipo === 'keywords') {
+            return pregunta.keywords.join(', ');
+          }
+          return 'Desconocida';
+        };
+
         // Responder pregunta
         const responderPregunta = (pregunta, respuestaUsuario) => {
+          preguntaActual.value = pregunta;
           const prog = progresos.value.find(p => p.id === pregunta.id);
           let acierto = false;
           if (pregunta.tipo === 'multiple') {
             acierto = respuestaUsuario === pregunta.correcta;
           } else if (pregunta.tipo === 'order') {
             if (typeof respuestaUsuario === 'string') {
-              // Fallback: procesar entrada de texto (e.g., "1,2,3,4")
               const indices = respuestaUsuario.split(',').map(i => parseInt(i.trim()) - 1);
               const ordenUsuario = indices.map(i => pregunta.elementos[i]).filter(e => e);
               acierto = JSON.stringify(ordenUsuario) === JSON.stringify(pregunta.ordenCorrecto);
@@ -407,8 +444,8 @@
             prog.aciertosConsecutivos++;
             modalEsCorrecto.value = true;
             modalNivel.value = prog.nivel;
-            puntosTotales.value += 10; // Gamificación: +10 puntos por acierto
-            confetti({ particleCount: 100, spread: 70 }); // Confeti
+            puntosTotales.value += 10;
+            confetti({ particleCount: 100, spread: 70 });
           } else {
             prog.nivel = 1;
             prog.aciertosConsecutivos = 0;
@@ -426,23 +463,24 @@
         const siguientePregunta = () => {
           preguntaActualIndex.value++;
           cerrarModal();
-          window.scrollTo(0, 0); // Forzar scroll al inicio
+          window.scrollTo(0, 0);
         };
 
         const finalizarRespuesta = () => {
           if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length - 1) {
             preguntaActualIndex.value++;
             if (calcularProgresoTema(temaSeleccionado.value) === 100) {
-              insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value)); // Insignia por completar tema
+              insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value));
               guardarProgresos();
             }
           }
           cerrarModal();
-          window.scrollTo(0, 0); // Forzar scroll al inicio
+          window.scrollTo(0, 0);
         };
 
         const cerrarModal = () => {
           mostrarModal.value = false;
+          preguntaActual.value = null;
         };
 
         // Componentes para tipos de preguntas
@@ -484,13 +522,29 @@
               // Fallback: entrada de texto para ordenar
               return {
                 props: ['pregunta'],
+                data() {
+                  return {
+                    inputValue: ''
+                  };
+                },
+                watch: {
+                  inputValue(newValue) {
+                    this.$emit('respuesta', newValue);
+                  }
+                },
                 template: `
-                  <div>
+                  <div :key="pregunta.id">
                     <p class="mb-2">Ingresa los números en el orden correcto (e.g., 1,2,3,4):</p>
                     <ul class="mb-2">
                       <li v-for="(item, index) in pregunta.elementos" :key="index" class="text-gray-700">{{ index + 1 }}. {{ item }}</li>
                     </ul>
-                    <input type="text" v-model="$parent.respuestaSeleccionada[pregunta.id]" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
+                    <input
+                      type="text"
+                      v-model="inputValue"
+                      placeholder="Ej: 1,2,3,4"
+                      class="w-full p-2 border rounded"
+                      @input="$emit('respuesta', $event.target.value)"
+                    >
                   </div>
                 `
               };
@@ -498,10 +552,36 @@
           } else if (tipo === 'keywords') {
             return {
               props: ['pregunta'],
+              setup(props) {
+                const inputValue = ref('');
+                const inputRef = ref(null);
+
+                const handleInput = (event) => {
+                  inputValue.value = event.target.value;
+                  props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
+                  // Restaurar foco
+                  if (inputRef.value) {
+                    inputRef.value.focus();
+                  }
+                };
+
+                return {
+                  inputValue,
+                  inputRef,
+                  handleInput
+                };
+              },
               template: `
-                <div>
+                <div :key="pregunta.id">
                   <p class="mb-2">{{ pregunta.textoBase }}</p>
-                  <input type="text" v-model="$parent.respuestaSeleccionada[pregunta.id]" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
+                  <input
+                    ref="inputRef"
+                    type="text"
+                    v-model="inputValue"
+                    placeholder="Palabras clave separadas por coma"
+                    class="w-full p-2 border rounded"
+                    @input="handleInput"
+                  >
                 </div>
               `
             };
@@ -609,7 +689,7 @@
           guardarProgresos();
           calcularPendientes();
           mostrarModalReset.value = false;
-          window.scrollTo(0, 0); // Forzar scroll al inicio
+          window.scrollTo(0, 0);
         };
 
         return {
@@ -631,6 +711,7 @@
           mostrarModalReset,
           puntosTotales,
           insignias,
+          preguntaActual,
           toggleExpand,
           iniciarCuestionario,
           responderPregunta,
@@ -653,7 +734,9 @@
           getPreguntaTexto,
           getPreguntaTemaId,
           getComponentForType,
-          handleRespuesta
+          handleRespuesta,
+          getRespuestaUsuario,
+          getRespuestaCorrecta
         };
       }
     }).mount('#app');
