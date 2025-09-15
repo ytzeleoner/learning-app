@@ -456,6 +456,7 @@
               puntosTotales: puntosTotales.value,
               insignias: insignias.value
             };
+            console.log('Saving to Sheets:', JSON.stringify(data));
             const response = await fetch(APPS_SCRIPT_URL, {
               method: 'POST',
               mode: 'cors',
@@ -463,14 +464,15 @@
               body: JSON.stringify(data)
             });
             if (!response.ok) {
-              console.error('Error saving progresos:', await response.text());
+              const errorText = await response.text();
+              console.error('Error saving progresos:', response.status, errorText);
               throw new Error('Error saving progresos');
             }
             const result = await response.json();
+            console.log('Save response:', result);
             if (result.status !== 'success') throw new Error('Failed to save progresos');
           } catch (error) {
             console.error('Error saving progresos to Sheets:', error);
-            // Guardar en localStorage como respaldo
             localStorage.setItem('progresos', JSON.stringify(progresos.value));
             localStorage.setItem('puntos', puntosTotales.value.toString());
             localStorage.setItem('insignias', JSON.stringify(insignias.value));
@@ -572,7 +574,7 @@
         onMounted(async () => {
           if (cargarCredenciales()) {
             await cargarDatosSheets();
-            cargarUserId(); // Cargar userId después de credenciales
+            cargarUserId();
           }
           window.scrollTo(0, 0);
         });
@@ -735,15 +737,11 @@
                 props: ['pregunta'],
                 setup(props) {
                   const inputValue = ref('');
-                  const inputRef = ref(null);
                   const handleInput = (event) => {
                     inputValue.value = event.target.value;
                     props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
-                    if (inputRef.value) {
-                      inputRef.value.focus();
-                    }
                   };
-                  return { inputValue, inputRef, handleInput };
+                  return { inputValue, handleInput };
                 },
                 template: `
                   <div :key="pregunta.id">
@@ -751,7 +749,7 @@
                     <ul class="mb-2">
                       <li v-for="(item, index) in pregunta.elementos" :key="index" class="text-gray-700">{{ index + 1 }}. {{ item }}</li>
                     </ul>
-                    <input ref="inputRef" type="text" v-model="inputValue" @input="handleInput" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
+                    <input type="text" v-model="inputValue" @input="handleInput" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
                   </div>
                 `
               };
@@ -761,20 +759,16 @@
               props: ['pregunta'],
               setup(props) {
                 const inputValue = ref('');
-                const inputRef = ref(null);
                 const handleInput = (event) => {
                   inputValue.value = event.target.value;
                   props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
-                  if (inputRef.value) {
-                    inputRef.value.focus();
-                  }
                 };
-                return { inputValue, inputRef, handleInput };
+                return { inputValue, handleInput };
               },
               template: `
                 <div :key="pregunta.id">
                   <p class="mb-2">{{ pregunta.textoBase }}</p>
-                  <input ref="inputRef" type="text" v-model="inputValue" @input="handleInput" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
+                  <input type="text" v-model="inputValue" @input="handleInput" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
                 </div>
               `
             };
