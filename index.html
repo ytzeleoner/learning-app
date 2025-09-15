@@ -113,7 +113,7 @@
       <div class="space-y-4">
         <div v-for="area in areas" :key="area.id">
           <button @click="toggleExpand('area', area.id)"
-                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(area.id)]"
+                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(getAreaId(area.id))]"
                   class="hover:opacity-90 transition-opacity">
             {{ area.nombre }} (Progreso: {{ calcularProgresoArea(area.id) }}%)
           </button>
@@ -242,56 +242,21 @@
   <script>
     const { createApp, ref, onMounted, reactive } = Vue;
 
+    // Configuración para Google Sheets - REEMPLAZA CON TUS VALORES
+    const SPREADSHEET_ID = '1Dx8Zx52w9Kw5cMJSn4n88LywESzNUImcyZeRA0iTDZ8'; // e.g., '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'
+    const API_KEY = 'AIzaSyCoUUk23MoqS2KzVfv8vYwpI-sX4seP1KA'; // Obtén de Google Cloud Console
+    const BASE_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values`;
+
     // Verificar carga de VueDraggableNext
     console.log('VueDraggableNext loaded:', typeof window.VueDraggableNext !== 'undefined');
 
     createApp({
       setup() {
-        // Datos de prueba con más tipos y explicaciones
-        const areas = ref([
-          { id: 1, nombre: 'Agile', color: 'bg-green-200' },
-          { id: 2, nombre: 'Lean', color: 'bg-blue-200' }
-        ]);
-
-        const conocimientos = ref([
-          { id: 1, areaId: 1, nombre: 'Scrum Básico' },
-          { id: 2, areaId: 2, nombre: 'Principios Lean' }
-        ]);
-
-        const temas = ref([
-          { id: 1, conocimientoId: 1, nombre: 'Roles en Scrum' },
-          { id: 2, conocimientoId: 2, nombre: 'Eliminación de Desperdicios' }
-        ]);
-
-        const preguntas = ref([
-          {
-            id: 1,
-            temaId: 1,
-            tipo: 'multiple',
-            texto: '¿Cuál es el rol responsable de maximizar el valor del producto?',
-            opciones: { a: 'Scrum Master', b: 'Product Owner', c: 'Development Team', d: 'Stakeholder' },
-            correcta: 'b',
-            explanation: 'El Product Owner es responsable de maximizar el valor del producto al priorizar el trabajo del equipo según las necesidades del negocio.'
-          },
-          {
-            id: 2,
-            temaId: 1,
-            tipo: 'order',
-            texto: 'Ordena los eventos de Scrum en secuencia:',
-            elementos: ['Sprint Review', 'Sprint Planning', 'Sprint Retrospective', 'Daily Scrum'],
-            ordenCorrecto: ['Sprint Planning', 'Daily Scrum', 'Sprint Review', 'Sprint Retrospective'],
-            explanation: 'En Scrum, los eventos siguen este orden: Sprint Planning inicia el sprint, Daily Scrum ocurre diariamente, Sprint Review evalúa el incremento, y Sprint Retrospective cierra el sprint con reflexiones.'
-          },
-          {
-            id: 3,
-            temaId: 2,
-            tipo: 'keywords',
-            texto: 'Encuentra las palabras clave en el siguiente texto:',
-            textoBase: 'Lean se enfoca en eliminar desperdicios como overproduction, waiting y defects para mejorar la eficiencia.',
-            keywords: ['overproduction', 'waiting', 'defects'],
-            explanation: 'Lean identifica siete tipos de desperdicios, incluyendo overproduction (producir más de lo necesario), waiting (esperas innecesarias), y defects (errores que requieren corrección).'
-          }
-        ]);
+        // Refs para datos (inicialmente vacíos, se cargan de Sheets)
+        const areas = ref([]);
+        const conocimientos = ref([]);
+        const temas = ref([]);
+        const preguntas = ref([]);
 
         // Progresos y gamificación
         const progresos = ref([]);
@@ -316,6 +281,63 @@
           conocimiento: {},
           tema: {}
         });
+
+        // Función para fetch datos de una hoja específica
+        const fetchSheetData = async (sheetName, range = 'A:Z') => {
+          try {
+            const url = `${BASE_URL}/${encodeURIComponent(sheetName)}!${range}?key=${API_KEY}&majorDimension=ROWS`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Error fetching ${sheetName}: ${response.status}`);
+            const data = await response.json();
+            return data.values || [];
+          } catch (error) {
+            console.error(`Error loading ${sheetName}:`, error);
+            return [];
+          }
+        };
+
+        // Cargar todos los datos de Sheets
+        const cargarDatosSheets = async () => {
+          const areasData = await fetchSheetData('Areas', 'A:C'); // Ajusta rango si necesitas más columnas
+          areas.value = areasData.slice(1).map(row => ({
+            id: parseInt(row[0]),
+            nombre: row[1],
+            color: row[2] || 'bg-gray-200'
+          }));
+
+          const conocimientosData = await fetchSheetData('Conocimientos', 'A:C');
+          conocimientos.value = conocimientosData.slice(1).map(row => ({
+            id: parseInt(row[0]),
+            areaId: parseInt(row[1]),
+            nombre: row[2]
+          }));
+
+          const temasData = await fetchSheetData('Temas', 'A:C');
+          temas.value = temasData.slice(1).map(row => ({
+            id: parseInt(row[0]),
+            conocimientoId: parseInt(row[1]),
+            nombre: row[2]
+          }));
+
+          const preguntasData = await fetchSheetData('Preguntas', 'A:K'); // Ajusta para cubrir todas las columnas
+          preguntas.value = preguntasData.slice(1).map(row => {
+            let opciones = {};
+            try { opciones = row[4] ? JSON.parse(row[4]) : {}; } catch (e) { console.warn('Error parsing opciones:', row[4]); }
+            return {
+              id: parseInt(row[0]),
+              temaId: parseInt(row[1]),
+              tipo: row[2],
+              texto: row[3],
+              opciones,
+              correcta: row[5],
+              elementos: row[6] ? row[6].split(',').map(s => s.trim()) : [],
+              ordenCorrecto: row[7] ? row[7].split(',').map(s => parseInt(s.trim())) : [],
+              textoBase: row[8],
+              keywords: row[9] ? row[9].split(',').map(s => s.trim()) : [],
+              explanation: row[10]
+            };
+          });
+        };
 
         const toggleExpand = (tipo, id) => {
           expanded.value[tipo][id] = !expanded.value[tipo][id];
@@ -348,7 +370,8 @@
         };
 
         // Cargar progresos y gamificación
-        onMounted(() => {
+        onMounted(async () => {
+          await cargarDatosSheets(); // Cargar datos de Sheets primero
           const savedProgresos = localStorage.getItem('progresos');
           const savedPuntos = localStorage.getItem('puntos');
           const savedInsignias = localStorage.getItem('insignias');
@@ -371,7 +394,7 @@
 
         const guardarProgresos = () => {
           localStorage.setItem('progresos', JSON.stringify(progresos.value));
-          localStorage.setItem('puntos', puntosTotales.value);
+          localStorage.setItem('puntos', puntosTotales.value.toString());
           localStorage.setItem('insignias', JSON.stringify(insignias.value));
         };
 
@@ -388,7 +411,8 @@
           });
           preguntasPendientes.value = progresos.value
             .filter(prog => prog.pendiente)
-            .map(prog => preguntas.value.find(p => p.id === prog.id));
+            .map(prog => preguntas.value.find(p => p.id === prog.id))
+            .filter(Boolean); // Filtrar nulos si hay errores de carga
         };
 
         // Obtener respuesta del usuario en formato legible
@@ -413,7 +437,7 @@
           if (pregunta.tipo === 'multiple') {
             return pregunta.opciones[pregunta.correcta];
           } else if (pregunta.tipo === 'order') {
-            return pregunta.ordenCorrecto.join(', ');
+            return pregunta.ordenCorrecto.map(idx => pregunta.elementos[idx]).join(', ');
           } else if (pregunta.tipo === 'keywords') {
             return pregunta.keywords.join(', ');
           }
@@ -424,6 +448,7 @@
         const responderPregunta = (pregunta, respuestaUsuario) => {
           preguntaActual.value = pregunta;
           const prog = progresos.value.find(p => p.id === pregunta.id);
+          if (!prog) return; // Si no existe progreso, crear uno
           let acierto = false;
           if (pregunta.tipo === 'multiple') {
             acierto = respuestaUsuario === pregunta.correcta;
@@ -431,9 +456,9 @@
             if (typeof respuestaUsuario === 'string') {
               const indices = respuestaUsuario.split(',').map(i => parseInt(i.trim()) - 1);
               const ordenUsuario = indices.map(i => pregunta.elementos[i]).filter(e => e);
-              acierto = JSON.stringify(ordenUsuario) === JSON.stringify(pregunta.ordenCorrecto);
+              acierto = JSON.stringify(ordenUsuario) === JSON.stringify(pregunta.ordenCorrecto.map(idx => pregunta.elementos[idx]));
             } else {
-              acierto = JSON.stringify(respuestaUsuario) === JSON.stringify(pregunta.ordenCorrecto);
+              acierto = JSON.stringify(respuestaUsuario) === JSON.stringify(pregunta.ordenCorrecto.map(idx => pregunta.elementos[idx]));
             }
           } else if (pregunta.tipo === 'keywords') {
             const userKeywords = respuestaUsuario.toLowerCase().split(',').map(k => k.trim());
@@ -483,7 +508,7 @@
           preguntaActual.value = null;
         };
 
-        // Componentes para tipos de preguntas
+        // Componentes para tipos de preguntas (sin cambios)
         const getComponentForType = (tipo) => {
           if (tipo === 'multiple') {
             return {
@@ -502,13 +527,12 @@
               return {
                 props: ['pregunta'],
                 components: { draggable: window.VueDraggableNext.draggable },
-                data() {
-                  return { lista: [...this.pregunta.elementos] };
-                },
-                methods: {
-                  onDragEnd() {
-                    this.$emit('respuesta', this.lista);
-                  }
+                setup(props) {
+                  const lista = ref([...props.pregunta.elementos]);
+                  const onDragEnd = () => {
+                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = [...lista.value]);
+                  };
+                  return { lista, onDragEnd };
                 },
                 template: `
                   <draggable v-model="lista" item-key="item" @end="onDragEnd" class="space-y-2">
@@ -522,15 +546,13 @@
               // Fallback: entrada de texto para ordenar
               return {
                 props: ['pregunta'],
-                data() {
-                  return {
-                    inputValue: ''
+                setup(props) {
+                  const inputValue = ref('');
+                  const handleInput = (event) => {
+                    inputValue.value = event.target.value;
+                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
                   };
-                },
-                watch: {
-                  inputValue(newValue) {
-                    this.$emit('respuesta', newValue);
-                  }
+                  return { inputValue, handleInput };
                 },
                 template: `
                   <div :key="pregunta.id">
@@ -538,13 +560,7 @@
                     <ul class="mb-2">
                       <li v-for="(item, index) in pregunta.elementos" :key="index" class="text-gray-700">{{ index + 1 }}. {{ item }}</li>
                     </ul>
-                    <input
-                      type="text"
-                      v-model="inputValue"
-                      placeholder="Ej: 1,2,3,4"
-                      class="w-full p-2 border rounded"
-                      @input="$emit('respuesta', $event.target.value)"
-                    >
+                    <input type="text" :value="inputValue" @input="handleInput" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
                   </div>
                 `
               };
@@ -555,48 +571,35 @@
               setup(props) {
                 const inputValue = ref('');
                 const inputRef = ref(null);
-
                 const handleInput = (event) => {
                   inputValue.value = event.target.value;
                   props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
-                  // Restaurar foco
                   if (inputRef.value) {
                     inputRef.value.focus();
                   }
                 };
-
-                return {
-                  inputValue,
-                  inputRef,
-                  handleInput
-                };
+                return { inputValue, inputRef, handleInput };
               },
               template: `
                 <div :key="pregunta.id">
                   <p class="mb-2">{{ pregunta.textoBase }}</p>
-                  <input
-                    ref="inputRef"
-                    type="text"
-                    v-model="inputValue"
-                    placeholder="Palabras clave separadas por coma"
-                    class="w-full p-2 border rounded"
-                    @input="handleInput"
-                  >
+                  <input ref="inputRef" type="text" v-model="inputValue" @input="handleInput" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
                 </div>
               `
             };
           }
+          return { template: '<div>Tipo no soportado</div>' };
         };
 
         const handleRespuesta = (respuesta, pregunta) => {
           respuestaSeleccionada[pregunta.id] = respuesta;
         };
 
-        // Helpers para áreas y navegación
+        // Helpers para áreas y navegación (sin cambios, pero usando refs cargadas)
         const getAreaId = (temaId) => {
           const tema = temas.value.find(t => t.id === temaId);
           const conocimiento = conocimientos.value.find(c => c.id === tema?.conocimientoId);
-          return conocimiento?.areaId;
+          return conocimiento?.areaId || 1; // Fallback
         };
 
         const getAreaNombre = (areaId) => {
@@ -650,13 +653,13 @@
 
         // Stats
         const contarPreguntasArea = (areaId) => {
-          const conocs = conocimientos.value.filter(c => c.areaId === areaId);
+          const conocs = getConocimientosByArea(areaId);
           const temasArea = temas.value.filter(t => conocs.some(c => c.id === t.conocimientoId));
           return preguntas.value.filter(p => temasArea.some(t => t.id === p.temaId)).length;
         };
 
         const contarAprendidasArea = (areaId) => {
-          const conocs = conocimientos.value.filter(c => c.areaId === areaId);
+          const conocs = getConocimientosByArea(areaId);
           const temasArea = temas.value.filter(t => conocs.some(c => c.id === t.conocimientoId));
           const pregIds = preguntas.value.filter(p => temasArea.some(t => t.id === p.temaId)).map(p => p.id);
           return progresos.value.filter(p => pregIds.includes(p.id) && p.nivel >= 10).length;
