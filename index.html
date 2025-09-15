@@ -305,8 +305,8 @@
   <script>
     const { createApp, ref, onMounted, reactive } = Vue;
 
-    // URL del Google Apps Script Web App (reemplaza con la tuya)
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWvuxtHDlzSzJlrBN4SKz8MJAuIXQ3aLWAnbx945btV5-icTAJlNx_IuJ_cg3LQLT66A/exec'; // e.g., https://script.google.com/macros/s/[WEB_APP_ID]/exec
+    // URL del Google Apps Script Web App
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/[NEW_WEB_APP_ID]/exec'; // Replace with your Web App URL
 
     // Verificar carga de VueDraggableNext
     console.log('VueDraggableNext loaded:', typeof window.VueDraggableNext !== 'undefined');
@@ -408,9 +408,19 @@
         // Cargar progresos desde Google Sheets
         const cargarProgresosDesdeSheets = async () => {
           try {
-            const response = await fetch(`${APPS_SCRIPT_URL}?userId=${userId.value}`);
-            if (!response.ok) throw new Error('Error fetching progresos');
+            console.log('Fetching progresos for userId:', userId.value);
+            const response = await fetch(`${APPS_SCRIPT_URL}?userId=${userId.value}`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            });
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Error fetching progresos: ${response.status} ${errorText}`);
+            }
             const data = await response.json();
+            console.log('Progresos fetched:', data);
             progresos.value = data.progresos || [];
             puntosTotales.value = data.puntosTotales || 0;
             insignias.value = data.insignias || [];
@@ -424,7 +434,7 @@
               await guardarProgresosEnSheets();
             }
           } catch (error) {
-            console.error('Error loading progresos from Sheets:', error);
+            console.error('Error loading progresos from Sheets:', error.message);
             // Fallback a localStorage
             const savedProgresos = localStorage.getItem('progresos');
             const savedPuntos = localStorage.getItem('puntos');
@@ -460,19 +470,21 @@
             const response = await fetch(APPS_SCRIPT_URL, {
               method: 'POST',
               mode: 'cors',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json'
+              },
               body: JSON.stringify(data)
             });
             if (!response.ok) {
               const errorText = await response.text();
               console.error('Error saving progresos:', response.status, errorText);
-              throw new Error('Error saving progresos');
+              throw new Error(`Error saving progresos: ${response.status} ${errorText}`);
             }
             const result = await response.json();
             console.log('Save response:', result);
-            if (result.status !== 'success') throw new Error('Failed to save progresos');
+            if (result.status !== 'success') throw new Error('Failed to save progresos: ' + JSON.stringify(result));
           } catch (error) {
-            console.error('Error saving progresos to Sheets:', error);
+            console.error('Error saving progresos to Sheets:', error.message);
             localStorage.setItem('progresos', JSON.stringify(progresos.value));
             localStorage.setItem('puntos', puntosTotales.value.toString());
             localStorage.setItem('insignias', JSON.stringify(insignias.value));
