@@ -8,6 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/vue-draggable-next@2.2.1/dist/vue-draggable-next.umd.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script src="https://apis.google.com/js/api.js"></script>
 </head>
 <body class="bg-gray-100 font-sans">
   <div id="app" class="container mx-auto p-4 max-w-4xl min-h-screen">
@@ -15,7 +16,7 @@
     <div v-if="mostrarModalCredenciales" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white rounded-lg p-6 max-w-md w-full">
         <h3 class="text-xl font-semibold text-gray-800 mb-4">Configuración de Google Sheets</h3>
-        <p class="text-gray-600 mb-4">Por favor, ingresa el ID de tu hoja de Google Sheets y la clave de API de Google.</p>
+        <p class="text-gray-600 mb-4">Por favor, ingresa el ID de tu hoja de Google Sheets, la clave de API de Google y el Client ID de OAuth.</p>
         <div class="space-y-4">
           <div>
             <label class="block text-gray-700 font-medium">Spreadsheet ID</label>
@@ -35,9 +36,18 @@
               class="w-full p-2 border rounded"
             >
           </div>
+          <div>
+            <label class="block text-gray-700 font-medium">OAuth Client ID</label>
+            <input
+              v-model="tempClientId"
+              type="text"
+              placeholder="Ej: YOUR_CLIENT_ID.apps.googleusercontent.com"
+              class="w-full p-2 border rounded"
+            >
+          </div>
           <button
             @click="guardarCredenciales"
-            :disabled="!tempSpreadsheetId || !tempApiKey"
+            :disabled="!tempSpreadsheetId || !tempApiKey || !tempClientId"
             class="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
             Guardar
@@ -46,11 +56,25 @@
       </div>
     </div>
 
+    <!-- Modal para iniciar sesión con Google -->
+    <div v-if="mostrarModalAuth" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Iniciar Sesión con Google</h3>
+        <p class="text-gray-600 mb-4">Necesitamos autenticarte para guardar tu progreso en Google Sheets.</p>
+        <button
+          @click="iniciarSesionGoogle"
+          class="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        >
+          Iniciar Sesión
+        </button>
+      </div>
+    </div>
+
     <!-- Modal para ingresar o cambiar userId -->
     <div v-if="mostrarModalUserId" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white rounded-lg p-6 max-w-md w-full">
         <h3 class="text-xl font-semibold text-gray-800 mb-4">Configuración de ID de Usuario</h3>
-        <p class="text-gray-600 mb-4">Tu ID de usuario identifica tus progresos en Google Sheets. Puedes usar el ID generado o introducir uno existente para cargar tus progresos desde otro dispositivo.</p>
+        <p class="text-gray-600 mb-4">Tu ID de usuario identifica tus progresos en Google Sheets. Puedes usar el ID generado o introducir uno existente.</p>
         <div class="space-y-4">
           <div>
             <label class="block text-gray-700 font-medium">ID de Usuario</label>
@@ -305,12 +329,6 @@
   <script>
     const { createApp, ref, onMounted, reactive } = Vue;
 
-    // URL del Google Apps Script Web App
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxWvuxtHDlzSzJlrBN4SKz8MJAuIXQ3aLWAnbx945btV5-icTAJlNx_IuJ_cg3LQLT66A/exec'; // Replace with your Web App URL
-
-    // Verificar carga de VueDraggableNext
-    console.log('VueDraggableNext loaded:', typeof window.VueDraggableNext !== 'undefined');
-
     createApp({
       setup() {
         // Refs para datos
@@ -340,8 +358,15 @@
         const mostrarModalCredenciales = ref(false);
         const tempSpreadsheetId = ref('');
         const tempApiKey = ref('');
+        const tempClientId = ref('');
         const spreadsheetId = ref('');
         const apiKey = ref('');
+        const clientId = ref('');
+
+        // Estado para autenticación
+        const mostrarModalAuth = ref(false);
+        const accessToken = ref(null);
+        const isSignedIn = ref(false);
 
         // Estado para userId
         const userId = ref('');
@@ -355,16 +380,52 @@
           tema: {}
         });
 
+        // Inicializar Google API Client
+        const initGapiClient = () => {
+          return new Promise((resolve) => {
+            gapi.load('client:auth2', () => {
+              gapi.client.init({
+                clientId: clientId.value,
+                scope: 'https://www.googleapis.com/auth/spreadsheets'
+              }).then(() => {
+                gapi.auth2.getAuthInstance().isSignedIn.listen((signedIn) => {
+                  isSignedIn.value = signedIn;
+                  if (signedIn) {
+                    accessToken.value = gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token;
+                    mostrarModalAuth.value = false;
+                  } else {
+                    accessToken.value = null;
+                  }
+                });
+                isSignedIn.value = gapi.auth2.getAuthInstance().isSignedIn.get();
+                if (isSignedIn.value) {
+                  accessToken.value = gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token;
+                }
+                resolve();
+              }).catch((error) => {
+                console.error('Error initializing gapi client:', error);
+                mostrarModalAuth.value = true;
+                resolve();
+              });
+            });
+          });
+        };
+
+        // Iniciar sesión con Google
+        const iniciarSesionGoogle = () => {
+          gapi.auth2.getAuthInstance().signIn();
+        };
+
         // Generar o cargar userId
         const cargarUserId = () => {
           let savedUserId = localStorage.getItem('userId');
           if (!savedUserId) {
-            savedUserId = 'user_' + Math.random().toString(36).substr(2, 9); // Generar ID aleatorio
+            savedUserId = 'user_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('userId', savedUserId);
           }
           userId.value = savedUserId;
-          tempUserId.value = savedUserId; // Mostrar en el modal
-          mostrarModalUserId.value = true; // Mostrar modal al inicio
+          tempUserId.value = savedUserId;
+          mostrarModalUserId.value = true;
         };
 
         // Guardar userId y recargar progresos
@@ -373,19 +434,22 @@
             userId.value = tempUserId.value;
             localStorage.setItem('userId', userId.value);
             mostrarModalUserId.value = false;
-            await cargarProgresosDesdeSheets(); // Recargar progresos con el nuevo userId
+            await cargarProgresosDesdeSheets();
             calcularPendientes();
             actualizarInsignias();
           }
         };
 
         // Cargar credenciales desde localStorage
-        const cargarCredenciales = () => {
+        const cargarCredenciales = async () => {
           const savedSpreadsheetId = localStorage.getItem('spreadsheetId');
           const savedApiKey = localStorage.getItem('apiKey');
-          if (savedSpreadsheetId && savedApiKey) {
+          const savedClientId = localStorage.getItem('clientId');
+          if (savedSpreadsheetId && savedApiKey && savedClientId) {
             spreadsheetId.value = savedSpreadsheetId;
             apiKey.value = savedApiKey;
+            clientId.value = savedClientId;
+            await initGapiClient();
             return true;
           }
           mostrarModalCredenciales.value = true;
@@ -394,14 +458,17 @@
 
         // Guardar credenciales en localStorage
         const guardarCredenciales = async () => {
-          if (tempSpreadsheetId.value && tempApiKey.value) {
+          if (tempSpreadsheetId.value && tempApiKey.value && tempClientId.value) {
             localStorage.setItem('spreadsheetId', tempSpreadsheetId.value);
             localStorage.setItem('apiKey', tempApiKey.value);
+            localStorage.setItem('clientId', tempClientId.value);
             spreadsheetId.value = tempSpreadsheetId.value;
             apiKey.value = tempApiKey.value;
+            clientId.value = tempClientId.value;
             mostrarModalCredenciales.value = false;
+            await initGapiClient();
             await cargarDatosSheets();
-            cargarUserId(); // Cargar userId después de credenciales
+            cargarUserId();
           }
         };
 
@@ -409,21 +476,25 @@
         const cargarProgresosDesdeSheets = async () => {
           try {
             console.log('Fetching progresos for userId:', userId.value);
-            const response = await fetch(`${APPS_SCRIPT_URL}?userId=${userId.value}`, {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json'
-              }
-            });
+            const response = await fetch(
+              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A:G?key=${apiKey.value}&majorDimension=ROWS`
+            );
             if (!response.ok) {
               const errorText = await response.text();
               throw new Error(`Error fetching progresos: ${response.status} ${errorText}`);
             }
             const data = await response.json();
-            console.log('Progresos fetched:', data);
-            progresos.value = data.progresos || [];
-            puntosTotales.value = data.puntosTotales || 0;
-            insignias.value = data.insignias || [];
+            const rows = data.values || [];
+            const userRows = rows.slice(1).filter(row => row[0] === userId.value);
+            progresos.value = userRows.map(row => ({
+              id: parseInt(row[1]),
+              nivel: parseInt(row[2]),
+              ultimaRepaso: row[3],
+              aciertosConsecutivos: parseInt(row[4])
+            }));
+            puntosTotales.value = userRows.length > 0 ? parseInt(userRows[5]) : 0;
+            insignias.value = userRows.length > 0 ? JSON.parse(userRows[6]) : [];
+            console.log('Progresos fetched:', { progresos: progresos.value, puntosTotales: puntosTotales.value, insignias: insignias.value });
             if (progresos.value.length === 0 && preguntas.value.length > 0) {
               progresos.value = preguntas.value.map(p => ({
                 id: p.id,
@@ -435,7 +506,6 @@
             }
           } catch (error) {
             console.error('Error loading progresos from Sheets:', error.message);
-            // Fallback a localStorage
             const savedProgresos = localStorage.getItem('progresos');
             const savedPuntos = localStorage.getItem('puntos');
             const savedInsignias = localStorage.getItem('insignias');
@@ -458,36 +528,69 @@
 
         // Guardar progresos en Google Sheets
         const guardarProgresosEnSheets = async () => {
+          if (!isSignedIn.value || !accessToken.value) {
+            console.warn('User not signed in, showing auth modal');
+            mostrarModalAuth.value = true;
+            return;
+          }
           try {
             const data = {
-              action: 'save',
               userId: userId.value,
               progresos: progresos.value,
               puntosTotales: puntosTotales.value,
               insignias: insignias.value
             };
             console.log('Saving to Sheets:', JSON.stringify(data));
-            const response = await fetch(APPS_SCRIPT_URL, {
-              method: 'POST',
-              mode: 'cors',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(data)
+            const rows = [
+              ['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias']
+            ];
+            data.progresos.forEach(progreso => {
+              rows.push([
+                data.userId,
+                progreso.id,
+                progreso.nivel,
+                progreso.ultimaRepaso,
+                progreso.aciertosConsecutivos,
+                data.puntosTotales,
+                JSON.stringify(data.insignias)
+              ]);
             });
+            const response = await fetch(
+              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A:G:clear`,
+              {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${accessToken.value}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
             if (!response.ok) {
               const errorText = await response.text();
-              console.error('Error saving progresos:', response.status, errorText);
-              throw new Error(`Error saving progresos: ${response.status} ${errorText}`);
+              throw new Error(`Error clearing progresos: ${response.status} ${errorText}`);
             }
-            const result = await response.json();
-            console.log('Save response:', result);
-            if (result.status !== 'success') throw new Error('Failed to save progresos: ' + JSON.stringify(result));
+            const updateResponse = await fetch(
+              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A1:G${rows.length}?valueInputOption=RAW`,
+              {
+                method: 'PUT',
+                headers: {
+                  'Authorization': `Bearer ${accessToken.value}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ values: rows })
+              }
+            );
+            if (!updateResponse.ok) {
+              const errorText = await updateResponse.text();
+              throw new Error(`Error saving progresos: ${updateResponse.status} ${errorText}`);
+            }
+            console.log('Save response:', await updateResponse.json());
           } catch (error) {
             console.error('Error saving progresos to Sheets:', error.message);
             localStorage.setItem('progresos', JSON.stringify(progresos.value));
             localStorage.setItem('puntos', puntosTotales.value.toString());
             localStorage.setItem('insignias', JSON.stringify(insignias.value));
+            mostrarModalAuth.value = true;
           }
         };
 
@@ -584,17 +687,16 @@
 
         // Cargar datos iniciales
         onMounted(async () => {
-          if (cargarCredenciales()) {
+          if (await cargarCredenciales()) {
             await cargarDatosSheets();
             cargarUserId();
           }
           window.scrollTo(0, 0);
         });
 
-        // Guardar progresos (en Sheets y localStorage como respaldo)
+        // Guardar progresos
         const guardarProgresos = () => {
           guardarProgresosEnSheets();
-          // Guardar en localStorage como respaldo
           localStorage.setItem('progresos', JSON.stringify(progresos.value));
           localStorage.setItem('puntos', puntosTotales.value.toString());
           localStorage.setItem('insignias', JSON.stringify(insignias.value));
@@ -680,7 +782,7 @@
             modalNivel.value = 1;
           }
           prog.ultimaRepaso = new Date().toISOString();
-          guardarProgresos();
+          await guardarProgresos();
           calcularPendientes();
           mostrarModal.value = true;
           respuestaSeleccionada[pregunta.id] = null;
@@ -698,7 +800,7 @@
             preguntaActualIndex.value++;
             if (calcularProgresoTema(temaSeleccionado.value) === 100) {
               insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value));
-              guardarProgresos();
+              await guardarProgresos();
             }
           }
           cerrarModal();
@@ -916,8 +1018,13 @@
           mostrarModalCredenciales,
           tempSpreadsheetId,
           tempApiKey,
+          tempClientId,
           spreadsheetId,
           apiKey,
+          clientId,
+          mostrarModalAuth,
+          isSignedIn,
+          accessToken,
           userId,
           tempUserId,
           mostrarModalUserId,
@@ -930,6 +1037,7 @@
           confirmarReset,
           guardarCredenciales,
           guardarUserId,
+          iniciarSesionGoogle,
           calcularProgresoArea,
           contarAprendidasArea,
           contarPreguntasArea,
