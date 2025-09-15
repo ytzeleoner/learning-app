@@ -175,7 +175,7 @@
       <div class="space-y-4">
         <div v-for="area in areas" :key="area.id">
           <button @click="toggleExpand('area', area.id)"
-                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(getAreaId(area.id))]"
+                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(area.id)]"
                   class="hover:opacity-90 transition-opacity">
             {{ area.nombre }} (Progreso: {{ calcularProgresoArea(area.id) }}%)
           </button>
@@ -414,15 +414,6 @@
             progresos.value = data.progresos || [];
             puntosTotales.value = data.puntosTotales || 0;
             insignias.value = data.insignias || [];
-            if (progresos.value.length === 0 && preguntas.value.length > 0) {
-              progresos.value = preguntas.value.map(p => ({
-                id: p.id,
-                nivel: 1,
-                ultimaRepaso: new Date(0).toISOString(),
-                aciertosConsecutivos: 0
-              }));
-              await guardarProgresosEnSheets();
-            }
           } catch (error) {
             console.error('Error loading progresos from Sheets:', error);
             // Fallback a localStorage
@@ -433,21 +424,20 @@
               progresos.value = JSON.parse(savedProgresos);
               puntosTotales.value = savedPuntos ? parseInt(savedPuntos) : 0;
               insignias.value = savedInsignias ? JSON.parse(savedInsignias) : [];
-            } else if (preguntas.value.length > 0) {
+            } else {
               progresos.value = preguntas.value.map(p => ({
                 id: p.id,
                 nivel: 1,
                 ultimaRepaso: new Date(0).toISOString(),
                 aciertosConsecutivos: 0
               }));
-              puntosTotales.value = 0;
-              insignias.value = [];
             }
           }
         };
 
         // Guardar progresos en Google Sheets
         const guardarProgresosEnSheets = async () => {
+          console.log('Guardando progresos en Sheets para userId:', userId.value);
           try {
             const response = await fetch(APPS_SCRIPT_URL, {
               method: 'POST',
@@ -460,11 +450,13 @@
                 insignias: insignias.value
               })
             });
-            if (!response.ok) throw new Error('Error saving progresos');
+            if (!response.ok) throw new Error('Error saving progresos: ' + response.status);
             const result = await response.json();
-            if (result.status !== 'success') throw new Error('Failed to save progresos');
+            if (result.status !== 'success') throw new Error('Failed to save progresos: ' + result.message);
+            console.log('Progresos guardados exitosamente en Sheets');
           } catch (error) {
             console.error('Error saving progresos to Sheets:', error);
+            alert('Error al guardar progresos en Google Sheets. Verifica la consola para detalles.');
             // Guardar en localStorage como respaldo
             localStorage.setItem('progresos', JSON.stringify(progresos.value));
             localStorage.setItem('puntos', puntosTotales.value.toString());
@@ -628,7 +620,7 @@
         };
 
         // Responder pregunta
-        const responderPregunta = async (pregunta, respuestaUsuario) => {
+        const responderPregunta = (pregunta, respuestaUsuario) => {
           preguntaActual.value = pregunta;
           const prog = progresos.value.find(p => p.id === pregunta.id);
           if (!prog) return;
@@ -661,7 +653,7 @@
             modalNivel.value = 1;
           }
           prog.ultimaRepaso = new Date().toISOString();
-          await guardarProgresos();
+          guardarProgresos();
           calcularPendientes();
           mostrarModal.value = true;
           respuestaSeleccionada[pregunta.id] = null;
@@ -674,12 +666,12 @@
           window.scrollTo(0, 0);
         };
 
-        const finalizarRespuesta = async () => {
-          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length - 1) {
+        const finalizarRespuesta = () => {
+          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.length - 1) {
             preguntaActualIndex.value++;
             if (calcularProgresoTema(temaSeleccionado.value) === 100) {
               insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value));
-              await guardarProgresos();
+              guardarProgresos();
             }
           }
           cerrarModal();
@@ -710,12 +702,13 @@
               return {
                 props: ['pregunta'],
                 components: { draggable: window.VueDraggableNext.draggable },
-                setup(props) {
-                  const lista = ref([...props.pregunta.elementos]);
-                  const onDragEnd = () => {
-                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = [...lista.value]);
-                  };
-                  return { lista, onDragEnd };
+                data() {
+                  return { lista: [...this.pregunta.elementos] };
+                },
+                methods: {
+                  onDragEnd() {
+                    this.$emit('respuesta', this.lista);
+                  }
                 },
                 template: `
                   <draggable v-model="lista" item-key="item" @end="onDragEnd" class="space-y-2">
@@ -726,15 +719,17 @@
                 `
               };
             } else {
+              // Fallback: entrada de texto para ordenar
               return {
                 props: ['pregunta'],
-                setup(props) {
-                  const inputValue = ref('');
-                  const handleInput = (event) => {
-                    inputValue.value = event.target.value;
-                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
-                  };
-                  return { inputValue, handleInput };
+                data() {
+                  return { inputValue: '' };
+                },
+                methods: {
+                  handleInput(event) {
+                    this.inputValue = event.target.value;
+                    this.$emit('respuesta', this.inputValue);
+                  }
                 },
                 template: `
                   <div :key="pregunta.id">
@@ -742,7 +737,7 @@
                     <ul class="mb-2">
                       <li v-for="(item, index) in pregunta.elementos" :key="index" class="text-gray-700">{{ index + 1 }}. {{ item }}</li>
                     </ul>
-                    <input type="text" :value="inputValue" @input="handleInput" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
+                    <input type="text" v-model="inputValue" @input="handleInput" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
                   </div>
                 `
               };
@@ -750,27 +745,23 @@
           } else if (tipo === 'keywords') {
             return {
               props: ['pregunta'],
-              setup(props) {
-                const inputValue = ref('');
-                const inputRef = ref(null);
-                const handleInput = (event) => {
-                  inputValue.value = event.target.value;
-                  props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
-                  if (inputRef.value) {
-                    inputRef.value.focus();
-                  }
-                };
-                return { inputValue, inputRef, handleInput };
+              data() {
+                return { inputValue: '' };
+              },
+              methods: {
+                handleInput(event) {
+                  this.inputValue = event.target.value;
+                  this.$emit('respuesta', this.inputValue);
+                }
               },
               template: `
                 <div :key="pregunta.id">
                   <p class="mb-2">{{ pregunta.textoBase }}</p>
-                  <input ref="inputRef" type="text" v-model="inputValue" @input="handleInput" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
+                  <input type="text" v-model="inputValue" @input="handleInput" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
                 </div>
               `
             };
           }
-          return { template: '<div>Tipo no soportado</div>' };
         };
 
         const handleRespuesta = (respuesta, pregunta) => {
@@ -781,12 +772,12 @@
         const getAreaId = (temaId) => {
           const tema = temas.value.find(t => t.id === temaId);
           const conocimiento = conocimientos.value.find(c => c.id === tema?.conocimientoId);
-          return conocimiento?.areaId || 1;
+          return conocimiento?.areaId;
         };
 
         const getAreaNombre = (areaId) => {
           const area = areas.value.find(a => a.id === areaId);
-          return area ? area.nombre : '';
+          return area ? area.nombre : 'Desconocida';
         };
 
         const getAreaColor = (areaId) => {
@@ -813,7 +804,7 @@
 
         const getTemaNombre = (temaId) => {
           const tema = temas.value.find(t => t.id === temaId);
-          return tema ? tema.nombre : '';
+          return tema ? tema.nombre : 'Desconocido';
         };
 
         const calcularProgresoTema = (temaId) => {
@@ -825,7 +816,7 @@
 
         const getPreguntaTexto = (preguntaId) => {
           const pregunta = preguntas.value.find(p => p.id === preguntaId);
-          return pregunta ? pregunta.texto : '';
+          return pregunta ? pregunta.texto : 'Desconocida';
         };
 
         const getPreguntaTemaId = (preguntaId) => {
@@ -863,7 +854,7 @@
         };
 
         // Reset
-        const confirmarReset = async () => {
+        const confirmarReset = () => {
           progresos.value = preguntas.value.map(p => ({
             id: p.id,
             nivel: 1,
@@ -872,7 +863,7 @@
           }));
           puntosTotales.value = 0;
           insignias.value = [];
-          await guardarProgresos();
+          guardarProgresos();
           calcularPendientes();
           mostrarModalReset.value = false;
           window.scrollTo(0, 0);
@@ -903,9 +894,6 @@
           tempApiKey,
           spreadsheetId,
           apiKey,
-          userId,
-          tempUserId,
-          mostrarModalUserId,
           toggleExpand,
           iniciarCuestionario,
           responderPregunta,
@@ -914,7 +902,6 @@
           cerrarModal,
           confirmarReset,
           guardarCredenciales,
-          guardarUserId,
           calcularProgresoArea,
           contarAprendidasArea,
           contarPreguntasArea,
