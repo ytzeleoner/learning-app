@@ -11,6 +11,68 @@
 </head>
 <body class="bg-gray-100 font-sans">
   <div id="app" class="container mx-auto p-4 max-w-4xl min-h-screen">
+    <!-- Modal para ingresar SPREADSHEET_ID y API_KEY -->
+    <div v-if="mostrarModalCredenciales" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Configuración de Google Sheets</h3>
+        <p class="text-gray-600 mb-4">Por favor, ingresa el ID de tu hoja de Google Sheets y la clave de API de Google.</p>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-gray-700 font-medium">Spreadsheet ID</label>
+            <input
+              v-model="tempSpreadsheetId"
+              type="text"
+              placeholder="Ej: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+              class="w-full p-2 border rounded"
+            >
+          </div>
+          <div>
+            <label class="block text-gray-700 font-medium">API Key</label>
+            <input
+              v-model="tempApiKey"
+              type="text"
+              placeholder="Ej: AIzaSyCoUUk23MoqS2KzVfv8vYwpI-sX4seP1KA"
+              class="w-full p-2 border rounded"
+            >
+          </div>
+          <button
+            @click="guardarCredenciales"
+            :disabled="!tempSpreadsheetId || !tempApiKey"
+            class="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para ingresar o cambiar userId -->
+    <div v-if="mostrarModalUserId" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-lg p-6 max-w-md w-full">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">Configuración de ID de Usuario</h3>
+        <p class="text-gray-600 mb-4">Tu ID de usuario identifica tus progresos en Google Sheets. Puedes usar el ID generado o introducir uno existente para cargar tus progresos desde otro dispositivo.</p>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-gray-700 font-medium">ID de Usuario</label>
+            <input
+              v-model="tempUserId"
+              type="text"
+              placeholder="Ej: user_abc123"
+              class="w-full p-2 border rounded"
+            >
+            <p class="text-sm text-gray-500 mt-1">ID actual: {{ userId }}</p>
+          </div>
+          <button
+            @click="guardarUserId"
+            :disabled="!tempUserId"
+            class="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          >
+            Guardar ID
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Header -->
     <header class="bg-white shadow rounded-lg p-6 mb-6 text-center">
       <h1 class="text-3xl font-bold text-gray-800">Aprende con Repaso Espaciado</h1>
@@ -193,6 +255,7 @@
     <!-- Vista Progresos -->
     <section v-if="vistaActual === 'progresos'" class="bg-white shadow rounded-lg p-6 mb-6">
       <h2 class="text-2xl font-semibold text-gray-800 mb-4">Mis Progresos por Pregunta</h2>
+      <p class="text-sm text-gray-600 mb-4">ID de usuario actual: {{ userId }} <button @click="mostrarModalUserId = true" class="ml-2 text-blue-500 hover:underline">Cambiar ID</button></p>
       <table class="w-full border-collapse">
         <thead>
           <tr class="bg-gray-200">
@@ -242,17 +305,15 @@
   <script>
     const { createApp, ref, onMounted, reactive } = Vue;
 
-    // Configuración para Google Sheets - REEMPLAZA CON TUS VALORES
-    const SPREADSHEET_ID = '1Dx8Zx52w9Kw5cMJSn4n88LywESzNUImcyZeRA0iTDZ8'; // e.g., '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'
-    const API_KEY = 'AIzaSyCoUUk23MoqS2KzVfv8vYwpI-sX4seP1KA'; // Obtén de Google Cloud Console
-    const BASE_URL = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values`;
+    // URL del Google Apps Script Web App (reemplaza con la tuya)
+    const APPS_SCRIPT_URL = 'TU_APPS_SCRIPT_URL_AQUI'; // e.g., https://script.google.com/macros/s/[WEB_APP_ID]/exec
 
     // Verificar carga de VueDraggableNext
     console.log('VueDraggableNext loaded:', typeof window.VueDraggableNext !== 'undefined');
 
     createApp({
       setup() {
-        // Refs para datos (inicialmente vacíos, se cargan de Sheets)
+        // Refs para datos
         const areas = ref([]);
         const conocimientos = ref([]);
         const temas = ref([]);
@@ -275,6 +336,18 @@
         const preguntaActualIndex = ref(0);
         const preguntasCuestionario = ref([]);
 
+        // Estado para credenciales de Google Sheets
+        const mostrarModalCredenciales = ref(false);
+        const tempSpreadsheetId = ref('');
+        const tempApiKey = ref('');
+        const spreadsheetId = ref('');
+        const apiKey = ref('');
+
+        // Estado para userId
+        const userId = ref('');
+        const tempUserId = ref('');
+        const mostrarModalUserId = ref(false);
+
         // Expandir secciones en explorar
         const expanded = ref({
           area: {},
@@ -282,10 +355,131 @@
           tema: {}
         });
 
+        // Generar o cargar userId
+        const cargarUserId = () => {
+          let savedUserId = localStorage.getItem('userId');
+          if (!savedUserId) {
+            savedUserId = 'user_' + Math.random().toString(36).substr(2, 9); // Generar ID aleatorio
+            localStorage.setItem('userId', savedUserId);
+          }
+          userId.value = savedUserId;
+          tempUserId.value = savedUserId; // Mostrar en el modal
+          mostrarModalUserId.value = true; // Mostrar modal al inicio
+        };
+
+        // Guardar userId y recargar progresos
+        const guardarUserId = async () => {
+          if (tempUserId.value) {
+            userId.value = tempUserId.value;
+            localStorage.setItem('userId', userId.value);
+            mostrarModalUserId.value = false;
+            await cargarProgresosDesdeSheets(); // Recargar progresos con el nuevo userId
+            calcularPendientes();
+            actualizarInsignias();
+          }
+        };
+
+        // Cargar credenciales desde localStorage
+        const cargarCredenciales = () => {
+          const savedSpreadsheetId = localStorage.getItem('spreadsheetId');
+          const savedApiKey = localStorage.getItem('apiKey');
+          if (savedSpreadsheetId && savedApiKey) {
+            spreadsheetId.value = savedSpreadsheetId;
+            apiKey.value = savedApiKey;
+            return true;
+          }
+          mostrarModalCredenciales.value = true;
+          return false;
+        };
+
+        // Guardar credenciales en localStorage
+        const guardarCredenciales = async () => {
+          if (tempSpreadsheetId.value && tempApiKey.value) {
+            localStorage.setItem('spreadsheetId', tempSpreadsheetId.value);
+            localStorage.setItem('apiKey', tempApiKey.value);
+            spreadsheetId.value = tempSpreadsheetId.value;
+            apiKey.value = tempApiKey.value;
+            mostrarModalCredenciales.value = false;
+            await cargarDatosSheets();
+            cargarUserId(); // Cargar userId después de credenciales
+          }
+        };
+
+        // Cargar progresos desde Google Sheets
+        const cargarProgresosDesdeSheets = async () => {
+          try {
+            const response = await fetch(`${APPS_SCRIPT_URL}?userId=${userId.value}`);
+            if (!response.ok) throw new Error('Error fetching progresos');
+            const data = await response.json();
+            progresos.value = data.progresos || [];
+            puntosTotales.value = data.puntosTotales || 0;
+            insignias.value = data.insignias || [];
+            if (progresos.value.length === 0 && preguntas.value.length > 0) {
+              progresos.value = preguntas.value.map(p => ({
+                id: p.id,
+                nivel: 1,
+                ultimaRepaso: new Date(0).toISOString(),
+                aciertosConsecutivos: 0
+              }));
+              await guardarProgresosEnSheets();
+            }
+          } catch (error) {
+            console.error('Error loading progresos from Sheets:', error);
+            // Fallback a localStorage
+            const savedProgresos = localStorage.getItem('progresos');
+            const savedPuntos = localStorage.getItem('puntos');
+            const savedInsignias = localStorage.getItem('insignias');
+            if (savedProgresos) {
+              progresos.value = JSON.parse(savedProgresos);
+              puntosTotales.value = savedPuntos ? parseInt(savedPuntos) : 0;
+              insignias.value = savedInsignias ? JSON.parse(savedInsignias) : [];
+            } else if (preguntas.value.length > 0) {
+              progresos.value = preguntas.value.map(p => ({
+                id: p.id,
+                nivel: 1,
+                ultimaRepaso: new Date(0).toISOString(),
+                aciertosConsecutivos: 0
+              }));
+              puntosTotales.value = 0;
+              insignias.value = [];
+            }
+          }
+        };
+
+        // Guardar progresos en Google Sheets
+        const guardarProgresosEnSheets = async () => {
+          try {
+            const response = await fetch(APPS_SCRIPT_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'save',
+                userId: userId.value,
+                progresos: progresos.value,
+                puntosTotales: puntosTotales.value,
+                insignias: insignias.value
+              })
+            });
+            if (!response.ok) throw new Error('Error saving progresos');
+            const result = await response.json();
+            if (result.status !== 'success') throw new Error('Failed to save progresos');
+          } catch (error) {
+            console.error('Error saving progresos to Sheets:', error);
+            // Guardar en localStorage como respaldo
+            localStorage.setItem('progresos', JSON.stringify(progresos.value));
+            localStorage.setItem('puntos', puntosTotales.value.toString());
+            localStorage.setItem('insignias', JSON.stringify(insignias.value));
+          }
+        };
+
         // Función para fetch datos de una hoja específica
         const fetchSheetData = async (sheetName, range = 'A:Z') => {
+          if (!spreadsheetId.value || !apiKey.value) {
+            console.error('Faltan credenciales de Google Sheets');
+            return [];
+          }
           try {
-            const url = `${BASE_URL}/${encodeURIComponent(sheetName)}!${range}?key=${API_KEY}&majorDimension=ROWS`;
+            const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/${encodeURIComponent(sheetName)}!${range}?key=${apiKey.value}&majorDimension=ROWS`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`Error fetching ${sheetName}: ${response.status}`);
             const data = await response.json();
@@ -298,7 +492,7 @@
 
         // Cargar todos los datos de Sheets
         const cargarDatosSheets = async () => {
-          const areasData = await fetchSheetData('Areas', 'A:C'); // Ajusta rango si necesitas más columnas
+          const areasData = await fetchSheetData('Areas', 'A:C');
           areas.value = areasData.slice(1).map(row => ({
             id: parseInt(row[0]),
             nombre: row[1],
@@ -319,7 +513,7 @@
             nombre: row[2]
           }));
 
-          const preguntasData = await fetchSheetData('Preguntas', 'A:K'); // Ajusta para cubrir todas las columnas
+          const preguntasData = await fetchSheetData('Preguntas', 'A:K');
           preguntas.value = preguntasData.slice(1).map(row => {
             let opciones = {};
             try { opciones = row[4] ? JSON.parse(row[4]) : {}; } catch (e) { console.warn('Error parsing opciones:', row[4]); }
@@ -369,30 +563,19 @@
           return (intervalos[nivel] || 0) * 24 * 60 * 60 * 1000;
         };
 
-        // Cargar progresos y gamificación
+        // Cargar datos iniciales
         onMounted(async () => {
-          await cargarDatosSheets(); // Cargar datos de Sheets primero
-          const savedProgresos = localStorage.getItem('progresos');
-          const savedPuntos = localStorage.getItem('puntos');
-          const savedInsignias = localStorage.getItem('insignias');
-          if (savedProgresos) {
-            progresos.value = JSON.parse(savedProgresos);
-          } else {
-            progresos.value = preguntas.value.map(p => ({
-              id: p.id,
-              nivel: 1,
-              ultimaRepaso: new Date(0).toISOString(),
-              aciertosConsecutivos: 0
-            }));
+          if (cargarCredenciales()) {
+            await cargarDatosSheets();
+            cargarUserId();
           }
-          puntosTotales.value = savedPuntos ? parseInt(savedPuntos) : 0;
-          insignias.value = savedInsignias ? JSON.parse(savedInsignias) : [];
-          calcularPendientes();
-          actualizarInsignias();
           window.scrollTo(0, 0);
         });
 
+        // Guardar progresos (en Sheets y localStorage como respaldo)
         const guardarProgresos = () => {
+          guardarProgresosEnSheets();
+          // Guardar en localStorage como respaldo
           localStorage.setItem('progresos', JSON.stringify(progresos.value));
           localStorage.setItem('puntos', puntosTotales.value.toString());
           localStorage.setItem('insignias', JSON.stringify(insignias.value));
@@ -412,7 +595,7 @@
           preguntasPendientes.value = progresos.value
             .filter(prog => prog.pendiente)
             .map(prog => preguntas.value.find(p => p.id === prog.id))
-            .filter(Boolean); // Filtrar nulos si hay errores de carga
+            .filter(Boolean);
         };
 
         // Obtener respuesta del usuario en formato legible
@@ -445,10 +628,10 @@
         };
 
         // Responder pregunta
-        const responderPregunta = (pregunta, respuestaUsuario) => {
+        const responderPregunta = async (pregunta, respuestaUsuario) => {
           preguntaActual.value = pregunta;
           const prog = progresos.value.find(p => p.id === pregunta.id);
-          if (!prog) return; // Si no existe progreso, crear uno
+          if (!prog) return;
           let acierto = false;
           if (pregunta.tipo === 'multiple') {
             acierto = respuestaUsuario === pregunta.correcta;
@@ -478,7 +661,7 @@
             modalNivel.value = 1;
           }
           prog.ultimaRepaso = new Date().toISOString();
-          guardarProgresos();
+          await guardarProgresos();
           calcularPendientes();
           mostrarModal.value = true;
           respuestaSeleccionada[pregunta.id] = null;
@@ -491,12 +674,12 @@
           window.scrollTo(0, 0);
         };
 
-        const finalizarRespuesta = () => {
+        const finalizarRespuesta = async () => {
           if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length - 1) {
             preguntaActualIndex.value++;
             if (calcularProgresoTema(temaSeleccionado.value) === 100) {
               insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value));
-              guardarProgresos();
+              await guardarProgresos();
             }
           }
           cerrarModal();
@@ -508,7 +691,7 @@
           preguntaActual.value = null;
         };
 
-        // Componentes para tipos de preguntas (sin cambios)
+        // Componentes para tipos de preguntas
         const getComponentForType = (tipo) => {
           if (tipo === 'multiple') {
             return {
@@ -543,7 +726,6 @@
                 `
               };
             } else {
-              // Fallback: entrada de texto para ordenar
               return {
                 props: ['pregunta'],
                 setup(props) {
@@ -595,11 +777,11 @@
           respuestaSeleccionada[pregunta.id] = respuesta;
         };
 
-        // Helpers para áreas y navegación (sin cambios, pero usando refs cargadas)
+        // Helpers para áreas y navegación
         const getAreaId = (temaId) => {
           const tema = temas.value.find(t => t.id === temaId);
           const conocimiento = conocimientos.value.find(c => c.id === tema?.conocimientoId);
-          return conocimiento?.areaId || 1; // Fallback
+          return conocimiento?.areaId || 1;
         };
 
         const getAreaNombre = (areaId) => {
@@ -675,12 +857,13 @@
           temas.value.forEach(tema => {
             if (calcularProgresoTema(tema.id) === 100 && !insignias.value.includes('Maestro de ' + tema.nombre)) {
               insignias.value.push('Maestro de ' + tema.nombre);
+              guardarProgresos();
             }
           });
         };
 
         // Reset
-        const confirmarReset = () => {
+        const confirmarReset = async () => {
           progresos.value = preguntas.value.map(p => ({
             id: p.id,
             nivel: 1,
@@ -689,7 +872,7 @@
           }));
           puntosTotales.value = 0;
           insignias.value = [];
-          guardarProgresos();
+          await guardarProgresos();
           calcularPendientes();
           mostrarModalReset.value = false;
           window.scrollTo(0, 0);
@@ -715,6 +898,14 @@
           puntosTotales,
           insignias,
           preguntaActual,
+          mostrarModalCredenciales,
+          tempSpreadsheetId,
+          tempApiKey,
+          spreadsheetId,
+          apiKey,
+          userId,
+          tempUserId,
+          mostrarModalUserId,
           toggleExpand,
           iniciarCuestionario,
           responderPregunta,
@@ -722,6 +913,8 @@
           finalizarRespuesta,
           cerrarModal,
           confirmarReset,
+          guardarCredenciales,
+          guardarUserId,
           calcularProgresoArea,
           contarAprendidasArea,
           contarPreguntasArea,
