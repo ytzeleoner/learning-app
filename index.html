@@ -175,7 +175,7 @@
       <div class="space-y-4">
         <div v-for="area in areas" :key="area.id">
           <button @click="toggleExpand('area', area.id)"
-                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(area.id)]"
+                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(getAreaId(area.id))]"
                   class="hover:opacity-90 transition-opacity">
             {{ area.nombre }} (Progreso: {{ calcularProgresoArea(area.id) }}%)
           </button>
@@ -414,6 +414,15 @@
             progresos.value = data.progresos || [];
             puntosTotales.value = data.puntosTotales || 0;
             insignias.value = data.insignias || [];
+            if (progresos.value.length === 0 && preguntas.value.length > 0) {
+              progresos.value = preguntas.value.map(p => ({
+                id: p.id,
+                nivel: 1,
+                ultimaRepaso: new Date(0).toISOString(),
+                aciertosConsecutivos: 0
+              }));
+              await guardarProgresosEnSheets();
+            }
           } catch (error) {
             console.error('Error loading progresos from Sheets:', error);
             // Fallback a localStorage
@@ -424,39 +433,43 @@
               progresos.value = JSON.parse(savedProgresos);
               puntosTotales.value = savedPuntos ? parseInt(savedPuntos) : 0;
               insignias.value = savedInsignias ? JSON.parse(savedInsignias) : [];
-            } else {
+            } else if (preguntas.value.length > 0) {
               progresos.value = preguntas.value.map(p => ({
                 id: p.id,
                 nivel: 1,
                 ultimaRepaso: new Date(0).toISOString(),
                 aciertosConsecutivos: 0
               }));
+              puntosTotales.value = 0;
+              insignias.value = [];
             }
           }
         };
 
         // Guardar progresos en Google Sheets
         const guardarProgresosEnSheets = async () => {
-          console.log('Guardando progresos en Sheets para userId:', userId.value);
           try {
+            const data = {
+              action: 'save',
+              userId: userId.value,
+              progresos: progresos.value,
+              puntosTotales: puntosTotales.value,
+              insignias: insignias.value
+            };
             const response = await fetch(APPS_SCRIPT_URL, {
               method: 'POST',
+              mode: 'cors',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'save',
-                userId: userId.value,
-                progresos: progresos.value,
-                puntosTotales: puntosTotales.value,
-                insignias: insignias.value
-              })
+              body: JSON.stringify(data)
             });
-            if (!response.ok) throw new Error('Error saving progresos: ' + response.status);
+            if (!response.ok) {
+              console.error('Error saving progresos:', await response.text());
+              throw new Error('Error saving progresos');
+            }
             const result = await response.json();
-            if (result.status !== 'success') throw new Error('Failed to save progresos: ' + result.message);
-            console.log('Progresos guardados exitosamente en Sheets');
+            if (result.status !== 'success') throw new Error('Failed to save progresos');
           } catch (error) {
             console.error('Error saving progresos to Sheets:', error);
-            alert('Error al guardar progresos en Google Sheets. Verifica la consola para detalles.');
             // Guardar en localStorage como respaldo
             localStorage.setItem('progresos', JSON.stringify(progresos.value));
             localStorage.setItem('puntos', puntosTotales.value.toString());
@@ -559,7 +572,7 @@
         onMounted(async () => {
           if (cargarCredenciales()) {
             await cargarDatosSheets();
-            cargarUserId();
+            cargarUserId(); // Cargar userId después de credenciales
           }
           window.scrollTo(0, 0);
         });
@@ -620,7 +633,7 @@
         };
 
         // Responder pregunta
-        const responderPregunta = (pregunta, respuestaUsuario) => {
+        const responderPregunta = async (pregunta, respuestaUsuario) => {
           preguntaActual.value = pregunta;
           const prog = progresos.value.find(p => p.id === pregunta.id);
           if (!prog) return;
@@ -666,8 +679,8 @@
           window.scrollTo(0, 0);
         };
 
-        const finalizarRespuesta = () => {
-          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.length - 1) {
+        const finalizarRespuesta = async () => {
+          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length - 1) {
             preguntaActualIndex.value++;
             if (calcularProgresoTema(temaSeleccionado.value) === 100) {
               insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value));
@@ -702,13 +715,12 @@
               return {
                 props: ['pregunta'],
                 components: { draggable: window.VueDraggableNext.draggable },
-                data() {
-                  return { lista: [...this.pregunta.elementos] };
-                },
-                methods: {
-                  onDragEnd() {
-                    this.$emit('respuesta', this.lista);
-                  }
+                setup(props) {
+                  const lista = ref([...props.pregunta.elementos]);
+                  const onDragEnd = () => {
+                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = [...lista.value]);
+                  };
+                  return { lista, onDragEnd };
                 },
                 template: `
                   <draggable v-model="lista" item-key="item" @end="onDragEnd" class="space-y-2">
@@ -719,17 +731,19 @@
                 `
               };
             } else {
-              // Fallback: entrada de texto para ordenar
               return {
                 props: ['pregunta'],
-                data() {
-                  return { inputValue: '' };
-                },
-                methods: {
-                  handleInput(event) {
-                    this.inputValue = event.target.value;
-                    this.$emit('respuesta', this.inputValue);
-                  }
+                setup(props) {
+                  const inputValue = ref('');
+                  const inputRef = ref(null);
+                  const handleInput = (event) => {
+                    inputValue.value = event.target.value;
+                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
+                    if (inputRef.value) {
+                      inputRef.value.focus();
+                    }
+                  };
+                  return { inputValue, inputRef, handleInput };
                 },
                 template: `
                   <div :key="pregunta.id">
@@ -737,7 +751,7 @@
                     <ul class="mb-2">
                       <li v-for="(item, index) in pregunta.elementos" :key="index" class="text-gray-700">{{ index + 1 }}. {{ item }}</li>
                     </ul>
-                    <input type="text" v-model="inputValue" @input="handleInput" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
+                    <input ref="inputRef" type="text" v-model="inputValue" @input="handleInput" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
                   </div>
                 `
               };
@@ -745,23 +759,27 @@
           } else if (tipo === 'keywords') {
             return {
               props: ['pregunta'],
-              data() {
-                return { inputValue: '' };
-              },
-              methods: {
-                handleInput(event) {
-                  this.inputValue = event.target.value;
-                  this.$emit('respuesta', this.inputValue);
-                }
+              setup(props) {
+                const inputValue = ref('');
+                const inputRef = ref(null);
+                const handleInput = (event) => {
+                  inputValue.value = event.target.value;
+                  props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
+                  if (inputRef.value) {
+                    inputRef.value.focus();
+                  }
+                };
+                return { inputValue, inputRef, handleInput };
               },
               template: `
                 <div :key="pregunta.id">
                   <p class="mb-2">{{ pregunta.textoBase }}</p>
-                  <input type="text" v-model="inputValue" @input="handleInput" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
+                  <input ref="inputRef" type="text" v-model="inputValue" @input="handleInput" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
                 </div>
               `
             };
           }
+          return { template: '<div>Tipo no soportado</div>' };
         };
 
         const handleRespuesta = (respuesta, pregunta) => {
@@ -772,12 +790,12 @@
         const getAreaId = (temaId) => {
           const tema = temas.value.find(t => t.id === temaId);
           const conocimiento = conocimientos.value.find(c => c.id === tema?.conocimientoId);
-          return conocimiento?.areaId;
+          return conocimiento?.areaId || 1;
         };
 
         const getAreaNombre = (areaId) => {
           const area = areas.value.find(a => a.id === areaId);
-          return area ? area.nombre : 'Desconocida';
+          return area ? area.nombre : '';
         };
 
         const getAreaColor = (areaId) => {
@@ -804,7 +822,7 @@
 
         const getTemaNombre = (temaId) => {
           const tema = temas.value.find(t => t.id === temaId);
-          return tema ? tema.nombre : 'Desconocido';
+          return tema ? tema.nombre : '';
         };
 
         const calcularProgresoTema = (temaId) => {
@@ -816,7 +834,7 @@
 
         const getPreguntaTexto = (preguntaId) => {
           const pregunta = preguntas.value.find(p => p.id === preguntaId);
-          return pregunta ? pregunta.texto : 'Desconocida';
+          return pregunta ? pregunta.texto : '';
         };
 
         const getPreguntaTemaId = (preguntaId) => {
@@ -854,7 +872,7 @@
         };
 
         // Reset
-        const confirmarReset = () => {
+        const confirmarReset = async () => {
           progresos.value = preguntas.value.map(p => ({
             id: p.id,
             nivel: 1,
@@ -863,7 +881,7 @@
           }));
           puntosTotales.value = 0;
           insignias.value = [];
-          guardarProgresos();
+          await guardarProgresos();
           calcularPendientes();
           mostrarModalReset.value = false;
           window.scrollTo(0, 0);
@@ -894,6 +912,9 @@
           tempApiKey,
           spreadsheetId,
           apiKey,
+          userId,
+          tempUserId,
+          mostrarModalUserId,
           toggleExpand,
           iniciarCuestionario,
           responderPregunta,
@@ -902,6 +923,7 @@
           cerrarModal,
           confirmarReset,
           guardarCredenciales,
+          guardarUserId,
           calcularProgresoArea,
           contarAprendidasArea,
           contarPreguntasArea,
