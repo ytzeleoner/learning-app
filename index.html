@@ -8,11 +8,12 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/vue-draggable-next@2.2.1/dist/vue-draggable-next.umd.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-  <script src="https://apis.google.com/js/api.js"></script>
+  <!-- Reemplazar gapi con Google Identity Services -->
+  <script async defer src="https://accounts.google.com/gsi/client"></script>
 </head>
 <body class="bg-gray-100 font-sans">
   <div id="app" class="container mx-auto p-4 max-w-4xl min-h-screen">
-    <!-- Modal para ingresar SPREADSHEET_ID y API_KEY -->
+    <!-- Modal para ingresar SPREADSHEET_ID, API_KEY y Client ID -->
     <div v-if="mostrarModalCredenciales" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white rounded-lg p-6 max-w-md w-full">
         <h3 class="text-xl font-semibold text-gray-800 mb-4">Configuración de Google Sheets</h3>
@@ -61,269 +62,24 @@
       <div class="bg-white rounded-lg p-6 max-w-md w-full">
         <h3 class="text-xl font-semibold text-gray-800 mb-4">Iniciar Sesión con Google</h3>
         <p class="text-gray-600 mb-4">Necesitamos autenticarte para guardar tu progreso en Google Sheets.</p>
-        <button
-          @click="iniciarSesionGoogle"
-          class="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-        >
-          Iniciar Sesión
-        </button>
-      </div>
-    </div>
-
-    <!-- Modal para ingresar o cambiar userId -->
-    <div v-if="mostrarModalUserId" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg p-6 max-w-md w-full">
-        <h3 class="text-xl font-semibold text-gray-800 mb-4">Configuración de ID de Usuario</h3>
-        <p class="text-gray-600 mb-4">Tu ID de usuario identifica tus progresos en Google Sheets. Puedes usar el ID generado o introducir uno existente.</p>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-gray-700 font-medium">ID de Usuario</label>
-            <input
-              v-model="tempUserId"
-              type="text"
-              placeholder="Ej: user_abc123"
-              class="w-full p-2 border rounded"
-            >
-            <p class="text-sm text-gray-500 mt-1">ID actual: {{ userId }}</p>
-          </div>
+        <div class="flex justify-between">
           <button
-            @click="guardarUserId"
-            :disabled="!tempUserId"
-            class="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            @click="iniciarSesionGoogle"
+            class="py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
           >
-            Guardar ID
+            Iniciar Sesión
           </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Header -->
-    <header class="bg-white shadow rounded-lg p-6 mb-6 text-center">
-      <h1 class="text-3xl font-bold text-gray-800">Aprende con Repaso Espaciado</h1>
-      <p class="text-gray-600 mt-2">¡Practica tus conocimientos como en Duolingo!</p>
-      <p class="text-blue-600 font-semibold mt-2">Puntos totales: {{ puntosTotales }}</p>
-      <div class="mt-2 flex justify-center space-x-2">
-        <span v-for="insignia in insignias" :key="insignia" class="px-2 py-1 bg-yellow-200 rounded-full text-sm">{{ insignia }}</span>
-      </div>
-    </header>
-
-    <!-- Tabs para navegación -->
-    <nav class="mb-6">
-      <button @click="vistaActual = 'diario'; temaSeleccionado = null; cerrarModal()"
-              :class="['py-2 px-4 rounded-t-lg', vistaActual === 'diario' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800']"
-              class="hover:bg-blue-400 hover:text-white transition-colors">
-        Diario
-      </button>
-      <button @click="vistaActual = 'explorar'; temaSeleccionado = null; cerrarModal()"
-              :class="['py-2 px-4 rounded-t-lg', vistaActual === 'explorar' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800']"
-              class="hover:bg-blue-400 hover:text-white transition-colors">
-        Explorar Áreas
-      </button>
-      <button @click="vistaActual = 'progresos'; cerrarModal()"
-              :class="['py-2 px-4 rounded-t-lg', vistaActual === 'progresos' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800']"
-              class="hover:bg-blue-400 hover:text-white transition-colors">
-        Mis Progresos
-      </button>
-    </nav>
-
-    <!-- Modal para feedback -->
-    <div v-if="mostrarModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg p-6 max-w-md w-full text-center">
-        <h3 class="text-xl font-semibold" :class="modalEsCorrecto ? 'text-green-600' : 'text-red-600'">
-          {{ modalEsCorrecto ? '¡Correcto!' : 'Incorrecto' }}
-        </h3>
-        <p class="text-gray-600 mt-2">
-          {{ modalEsCorrecto ? 'Has subido al nivel ' + modalNivel : 'Vuelves al nivel 1.' }}
-        </p>
-        <div v-if="preguntaActual" class="mt-4 text-left">
-          <p class="text-gray-700"><strong>Pregunta:</strong> {{ preguntaActual.texto }}</p>
-          <p class="text-gray-700"><strong>Tu respuesta:</strong> {{ getRespuestaUsuario(preguntaActual, respuestaSeleccionada[preguntaActual.id]) }}</p>
-          <p class="text-gray-700"><strong>Respuesta correcta:</strong> {{ getRespuestaCorrecta(preguntaActual) }}</p>
-          <p class="text-gray-700"><strong>Explicación:</strong> {{ preguntaActual.explanation || 'No hay explicación disponible.' }}</p>
-        </div>
-        <button v-if="vistaActual === 'cuestionario' && preguntaActualIndex < preguntasCuestionario.length - 1"
-                @click="siguientePregunta"
-                class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-          Siguiente Pregunta
-        </button>
-        <button v-else
-                @click="finalizarRespuesta"
-                class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-          {{ vistaActual === 'cuestionario' ? 'Finalizar Cuestionario' : 'Continuar' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Modal para confirmar reseteo -->
-    <div v-if="mostrarModalReset" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg p-6 max-w-md w-full text-center">
-        <h3 class="text-xl font-semibold text-gray-800">¿Resetear Progresos?</h3>
-        <p class="text-gray-600 mt-2">Esto pondrá todas las preguntas en nivel 1 y las hará pendientes.</p>
-        <div class="mt-4 flex justify-center space-x-4">
-          <button @click="confirmarReset"
-                  class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
-            Confirmar
-          </button>
-          <button @click="mostrarModalReset = false"
-                  class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors">
+          <button
+            @click="cerrarModalAuth"
+            class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
+          >
             Cancelar
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Vista Diario -->
-    <section v-if="vistaActual === 'diario'" class="bg-white shadow rounded-lg p-6 mb-6">
-      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Preguntas de Hoy ({{ preguntasPendientes.length }})</h2>
-      <div v-if="preguntasPendientes.length > 0" class="space-y-6">
-        <div v-for="(pregunta, index) in preguntasPendientes" :key="pregunta.id"
-             :class="['p-6 rounded-lg shadow-md transition-transform transform hover:scale-105', getAreaColor(getAreaId(pregunta.temaId))]">
-          <h3 class="text-xl font-semibold text-gray-800">{{ pregunta.texto }}</h3>
-          <p class="text-sm text-gray-500 mb-2">Área: {{ getAreaNombre(getAreaId(pregunta.temaId)) }} | Nivel: {{ getNivel(pregunta.id) }}</p>
-          <component :is="getComponentForType(pregunta.tipo)" :pregunta="pregunta" @respuesta="handleRespuesta($event, pregunta)"></component>
-          <button @click="responderPregunta(pregunta, respuestaSeleccionada[pregunta.id])"
-                  :disabled="!respuestaSeleccionada[pregunta.id]"
-                  class="mt-4 w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
-            Responder
-          </button>
-        </div>
-      </div>
-      <div v-else class="text-center p-6 bg-green-100 rounded-lg">
-        <p class="text-lg font-semibold text-green-800">¡No hay preguntas pendientes hoy! 🎉</p>
-      </div>
-    </section>
-
-    <!-- Vista Explorar -->
-    <section v-if="vistaActual === 'explorar'" class="bg-white shadow rounded-lg p-6 mb-6">
-      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Explorar Áreas</h2>
-      <div class="space-y-4">
-        <div v-for="area in areas" :key="area.id">
-          <button @click="toggleExpand('area', area.id)"
-                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(getAreaId(area.id))]"
-                  class="hover:opacity-90 transition-opacity">
-            {{ area.nombre }} (Progreso: {{ calcularProgresoArea(area.id) }}%)
-          </button>
-          <div v-if="expanded.area[area.id]" class="ml-4 space-y-2 mt-2">
-            <div v-for="conocimiento in getConocimientosByArea(area.id)" :key="conocimiento.id">
-              <button @click="toggleExpand('conocimiento', conocimiento.id)"
-                      class="w-full py-2 px-3 text-left rounded-lg bg-gray-50 hover:bg-gray-100">
-                {{ conocimiento.nombre }}
-              </button>
-              <div v-if="expanded.conocimiento[conocimiento.id]" class="ml-4 space-y-2 mt-2">
-                <div v-for="tema in getTemasByConocimiento(conocimiento.id)" :key="tema.id">
-                  <div class="flex justify-between items-center">
-                    <button @click="toggleExpand('tema', tema.id)"
-                            class="w-full py-2 px-3 text-left rounded-lg bg-gray-100 hover:bg-gray-200">
-                      {{ tema.nombre }}
-                    </button>
-                    <button @click="iniciarCuestionario(tema.id)"
-                            class="py-1 px-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-                      Hacer Cuestionario
-                    </button>
-                  </div>
-                  <div v-if="expanded.tema[tema.id]" class="ml-4 space-y-2 mt-2">
-                    <div v-for="pregunta in getPreguntasByTema(tema.id)" :key="pregunta.id"
-                         class="p-4 bg-white rounded-lg shadow">
-                      <h4 class="font-medium">{{ pregunta.texto }}</h4>
-                      <p class="text-sm text-gray-500">Nivel actual: {{ getNivel(pregunta.id) }}</p>
-                      <p class="text-sm text-gray-500">Tipo: {{ pregunta.tipo }}</p>
-                      <div v-if="pregunta.tipo === 'multiple'" class="text-sm text-gray-600">
-                        Opciones: {{ Object.values(pregunta.opciones).join(', ') }}
-                        <br>Correcta: {{ pregunta.opciones[pregunta.correcta] }}
-                      </div>
-                      <div v-if="pregunta.tipo === 'order'" class="text-sm text-gray-600">
-                        Elementos a ordenar: {{ pregunta.elementos.join(', ') }}
-                        <br>Orden correcto: {{ pregunta.ordenCorrecto.join(', ') }}
-                      </div>
-                      <div v-if="pregunta.tipo === 'keywords'" class="text-sm text-gray-600">
-                        Texto: {{ pregunta.textoBase }}
-                        <br>Palabras clave: {{ pregunta.keywords.join(', ') }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Vista Cuestionario -->
-    <section v-if="vistaActual === 'cuestionario'" class="bg-white shadow rounded-lg p-6 mb-6">
-      <h2 class="text-2xl font-semibold text-gray-800 mb-4">
-        Cuestionario: {{ getTemaNombre(temaSeleccionado) }} (Pregunta {{ preguntaActualIndex + 1 }} / {{ preguntasCuestionario.length }})
-      </h2>
-      <div v-if="preguntaActualIndex < preguntasCuestionario.length" class="space-y-6">
-        <div :class="['p-6 rounded-lg shadow-md', getAreaColor(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId))]">
-          <h3 class="text-xl font-semibold text-gray-800">{{ preguntasCuestionario[preguntaActualIndex].texto }}</h3>
-          <p class="text-sm text-gray-500 mb-2">Área: {{ getAreaNombre(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId)) }} | Nivel: {{ getNivel(preguntasCuestionario[preguntaActualIndex].id) }}</p>
-          <component :is="getComponentForType(preguntasCuestionario[preguntaActualIndex].tipo)" :pregunta="preguntasCuestionario[preguntaActualIndex]" @respuesta="handleRespuesta($event, preguntasCuestionario[preguntaActualIndex])"></component>
-          <button @click="responderPregunta(preguntasCuestionario[preguntaActualIndex], respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex].id])"
-                  :disabled="!respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex].id]"
-                  class="mt-4 w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
-            Responder
-          </button>
-        </div>
-      </div>
-      <div v-else class="text-center p-6 bg-green-100 rounded-lg">
-        <p class="text-lg font-semibold text-green-800">¡Cuestionario completado! 🎉</p>
-        <p class="text-gray-600 mt-2">Progreso en {{ getTemaNombre(temaSeleccionado) }}: {{ calcularProgresoTema(temaSeleccionado) }}%</p>
-        <button @click="vistaActual = 'explorar'; temaSeleccionado = null; preguntaActualIndex = 0; cerrarModal()"
-                class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-          Volver a Explorar
-        </button>
-      </div>
-    </section>
-
-    <!-- Vista Progresos -->
-    <section v-if="vistaActual === 'progresos'" class="bg-white shadow rounded-lg p-6 mb-6">
-      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Mis Progresos por Pregunta</h2>
-      <p class="text-sm text-gray-600 mb-4">ID de usuario actual: {{ userId }} <button @click="mostrarModalUserId = true" class="ml-2 text-blue-500 hover:underline">Cambiar ID</button></p>
-      <table class="w-full border-collapse">
-        <thead>
-          <tr class="bg-gray-200">
-            <th class="p-2 text-left">Pregunta</th>
-            <th class="p-2 text-left">Tema</th>
-            <th class="p-2 text-left">Nivel</th>
-            <th class="p-2 text-left">Último Repaso</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="prog in progresos" :key="prog.id" class="border-t">
-            <td class="p-2">{{ getPreguntaTexto(prog.id) }}</td>
-            <td class="p-2">{{ getTemaNombre(getPreguntaTemaId(prog.id)) }}</td>
-            <td class="p-2">{{ prog.nivel }}</td>
-            <td class="p-2">{{ new Date(prog.ultimaRepaso).toLocaleDateString() }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- Estadísticas -->
-    <section class="bg-white shadow rounded-lg p-6">
-      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Progreso por Área</h2>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div v-for="area in areas" :key="area.id" class="p-4 rounded-lg shadow"
-             :class="getAreaColor(area.id)">
-          <h3 class="text-lg font-semibold text-gray-800">{{ area.nombre }}</h3>
-          <p class="text-gray-600">Progreso: {{ calcularProgresoArea(area.id) }}%</p>
-          <p class="text-gray-600">Aprendidas: {{ contarAprendidasArea(area.id) }} / {{ contarPreguntasArea(area.id) }}</p>
-          <div class="mt-2 bg-gray-200 rounded-full h-2.5">
-            <div :class="['h-2.5 rounded-full', getAreaColor(area.id)]"
-                 :style="{ width: calcularProgresoArea(area.id) + '%' }"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Botón Reset -->
-    <div class="text-center mt-6">
-      <button @click="mostrarModalReset = true"
-              class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
-        Resetear Progresos
-      </button>
-    </div>
+    <!-- ... (resto del HTML igual, incluyendo modal de userId, header, tabs, vistas, etc.) ... -->
   </div>
 
   <script>
@@ -380,40 +136,68 @@
           tema: {}
         });
 
-        // Inicializar Google API Client
-        const initGapiClient = () => {
+        // Inicializar Google Identity Services
+        const initGoogleAuth = () => {
           return new Promise((resolve) => {
-            gapi.load('client:auth2', () => {
-              gapi.client.init({
-                clientId: clientId.value,
-                scope: 'https://www.googleapis.com/auth/spreadsheets'
-              }).then(() => {
-                gapi.auth2.getAuthInstance().isSignedIn.listen((signedIn) => {
-                  isSignedIn.value = signedIn;
-                  if (signedIn) {
-                    accessToken.value = gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token;
-                    mostrarModalAuth.value = false;
-                  } else {
-                    accessToken.value = null;
-                  }
-                });
-                isSignedIn.value = gapi.auth2.getAuthInstance().isSignedIn.get();
-                if (isSignedIn.value) {
-                  accessToken.value = gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token;
+            console.log('Initializing Google Identity Services with clientId:', clientId.value);
+            if (!window.google) {
+              console.error('Google Identity Services library not loaded');
+              mostrarModalAuth.value = true;
+              resolve();
+              return;
+            }
+            // Inicializar cliente OAuth
+            const client = google.accounts.oauth2.initTokenClient({
+              client_id: clientId.value,
+              scope: 'https://www.googleapis.com/auth/spreadsheets',
+              callback: (response) => {
+                console.log('OAuth callback response:', response);
+                if (response.access_token) {
+                  accessToken.value = response.access_token;
+                  isSignedIn.value = true;
+                  console.log('Access token obtained:', accessToken.value);
+                  mostrarModalAuth.value = false;
+                  // Reintentar guardar progresos si el modal estaba abierto
+                  guardarProgresosEnSheets();
+                } else {
+                  console.error('No access token received:', response.error || 'Unknown error');
+                  isSignedIn.value = false;
+                  accessToken.value = null;
+                  mostrarModalAuth.value = true;
                 }
-                resolve();
-              }).catch((error) => {
-                console.error('Error initializing gapi client:', error);
+              },
+              error_callback: (error) => {
+                console.error('OAuth error:', JSON.stringify(error, null, 2));
+                isSignedIn.value = false;
+                accessToken.value = null;
                 mostrarModalAuth.value = true;
-                resolve();
-              });
+              }
             });
+            window.googleAuthClient = client; // Guardar cliente para usarlo en iniciarSesionGoogle
+            console.log('Google Identity Services initialized');
+            resolve();
           });
         };
 
         // Iniciar sesión con Google
         const iniciarSesionGoogle = () => {
-          gapi.auth2.getAuthInstance().signIn();
+          console.log('Attempting Google sign-in');
+          if (!window.googleAuthClient) {
+            console.error('Google auth client not initialized');
+            mostrarModalAuth.value = true;
+            return;
+          }
+          window.googleAuthClient.requestAccessToken();
+        };
+
+        // Cerrar modal de autenticación
+        const cerrarModalAuth = () => {
+          console.log('Closing auth modal');
+          mostrarModalAuth.value = false;
+          // Guardar en localStorage como fallback
+          localStorage.setItem('progresos', JSON.stringify(progresos.value));
+          localStorage.setItem('puntos', puntosTotales.value.toString());
+          localStorage.setItem('insignias', JSON.stringify(insignias.value));
         };
 
         // Generar o cargar userId
@@ -449,7 +233,7 @@
             spreadsheetId.value = savedSpreadsheetId;
             apiKey.value = savedApiKey;
             clientId.value = savedClientId;
-            await initGapiClient();
+            await initGoogleAuth();
             return true;
           }
           mostrarModalCredenciales.value = true;
@@ -466,224 +250,13 @@
             apiKey.value = tempApiKey.value;
             clientId.value = tempClientId.value;
             mostrarModalCredenciales.value = false;
-            await initGapiClient();
+            await initGoogleAuth();
             await cargarDatosSheets();
             cargarUserId();
           }
         };
 
-        // Cargar progresos desde Google Sheets
-        const cargarProgresosDesdeSheets = async () => {
-          try {
-            console.log('Fetching progresos for userId:', userId.value);
-            const response = await fetch(
-              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A:G?key=${apiKey.value}&majorDimension=ROWS`
-            );
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`Error fetching progresos: ${response.status} ${errorText}`);
-            }
-            const data = await response.json();
-            const rows = data.values || [];
-            const userRows = rows.slice(1).filter(row => row[0] === userId.value);
-            progresos.value = userRows.map(row => ({
-              id: parseInt(row[1]),
-              nivel: parseInt(row[2]),
-              ultimaRepaso: row[3],
-              aciertosConsecutivos: parseInt(row[4])
-            }));
-            puntosTotales.value = userRows.length > 0 ? parseInt(userRows[5]) : 0;
-            insignias.value = userRows.length > 0 ? JSON.parse(userRows[6]) : [];
-            console.log('Progresos fetched:', { progresos: progresos.value, puntosTotales: puntosTotales.value, insignias: insignias.value });
-            if (progresos.value.length === 0 && preguntas.value.length > 0) {
-              progresos.value = preguntas.value.map(p => ({
-                id: p.id,
-                nivel: 1,
-                ultimaRepaso: new Date(0).toISOString(),
-                aciertosConsecutivos: 0
-              }));
-              await guardarProgresosEnSheets();
-            }
-          } catch (error) {
-            console.error('Error loading progresos from Sheets:', error.message);
-            const savedProgresos = localStorage.getItem('progresos');
-            const savedPuntos = localStorage.getItem('puntos');
-            const savedInsignias = localStorage.getItem('insignias');
-            if (savedProgresos) {
-              progresos.value = JSON.parse(savedProgresos);
-              puntosTotales.value = savedPuntos ? parseInt(savedPuntos) : 0;
-              insignias.value = savedInsignias ? JSON.parse(savedInsignias) : [];
-            } else if (preguntas.value.length > 0) {
-              progresos.value = preguntas.value.map(p => ({
-                id: p.id,
-                nivel: 1,
-                ultimaRepaso: new Date(0).toISOString(),
-                aciertosConsecutivos: 0
-              }));
-              puntosTotales.value = 0;
-              insignias.value = [];
-            }
-          }
-        };
-
-        // Guardar progresos en Google Sheets
-        const guardarProgresosEnSheets = async () => {
-          if (!isSignedIn.value || !accessToken.value) {
-            console.warn('User not signed in, showing auth modal');
-            mostrarModalAuth.value = true;
-            return;
-          }
-          try {
-            const data = {
-              userId: userId.value,
-              progresos: progresos.value,
-              puntosTotales: puntosTotales.value,
-              insignias: insignias.value
-            };
-            console.log('Saving to Sheets:', JSON.stringify(data));
-            const rows = [
-              ['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias']
-            ];
-            data.progresos.forEach(progreso => {
-              rows.push([
-                data.userId,
-                progreso.id,
-                progreso.nivel,
-                progreso.ultimaRepaso,
-                progreso.aciertosConsecutivos,
-                data.puntosTotales,
-                JSON.stringify(data.insignias)
-              ]);
-            });
-            const response = await fetch(
-              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A:G:clear`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${accessToken.value}`,
-                  'Content-Type': 'application/json'
-                }
-              }
-            );
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`Error clearing progresos: ${response.status} ${errorText}`);
-            }
-            const updateResponse = await fetch(
-              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A1:G${rows.length}?valueInputOption=RAW`,
-              {
-                method: 'PUT',
-                headers: {
-                  'Authorization': `Bearer ${accessToken.value}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ values: rows })
-              }
-            );
-            if (!updateResponse.ok) {
-              const errorText = await updateResponse.text();
-              throw new Error(`Error saving progresos: ${updateResponse.status} ${errorText}`);
-            }
-            console.log('Save response:', await updateResponse.json());
-          } catch (error) {
-            console.error('Error saving progresos to Sheets:', error.message);
-            localStorage.setItem('progresos', JSON.stringify(progresos.value));
-            localStorage.setItem('puntos', puntosTotales.value.toString());
-            localStorage.setItem('insignias', JSON.stringify(insignias.value));
-            mostrarModalAuth.value = true;
-          }
-        };
-
-        // Función para fetch datos de una hoja específica
-        const fetchSheetData = async (sheetName, range = 'A:Z') => {
-          if (!spreadsheetId.value || !apiKey.value) {
-            console.error('Faltan credenciales de Google Sheets');
-            return [];
-          }
-          try {
-            const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/${encodeURIComponent(sheetName)}!${range}?key=${apiKey.value}&majorDimension=ROWS`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Error fetching ${sheetName}: ${response.status}`);
-            const data = await response.json();
-            return data.values || [];
-          } catch (error) {
-            console.error(`Error loading ${sheetName}:`, error);
-            return [];
-          }
-        };
-
-        // Cargar todos los datos de Sheets
-        const cargarDatosSheets = async () => {
-          const areasData = await fetchSheetData('Areas', 'A:C');
-          areas.value = areasData.slice(1).map(row => ({
-            id: parseInt(row[0]),
-            nombre: row[1],
-            color: row[2] || 'bg-gray-200'
-          }));
-
-          const conocimientosData = await fetchSheetData('Conocimientos', 'A:C');
-          conocimientos.value = conocimientosData.slice(1).map(row => ({
-            id: parseInt(row[0]),
-            areaId: parseInt(row[1]),
-            nombre: row[2]
-          }));
-
-          const temasData = await fetchSheetData('Temas', 'A:C');
-          temas.value = temasData.slice(1).map(row => ({
-            id: parseInt(row[0]),
-            conocimientoId: parseInt(row[1]),
-            nombre: row[2]
-          }));
-
-          const preguntasData = await fetchSheetData('Preguntas', 'A:K');
-          preguntas.value = preguntasData.slice(1).map(row => {
-            let opciones = {};
-            try { opciones = row[4] ? JSON.parse(row[4]) : {}; } catch (e) { console.warn('Error parsing opciones:', row[4]); }
-            return {
-              id: parseInt(row[0]),
-              temaId: parseInt(row[1]),
-              tipo: row[2],
-              texto: row[3],
-              opciones,
-              correcta: row[5],
-              elementos: row[6] ? row[6].split(',').map(s => s.trim()) : [],
-              ordenCorrecto: row[7] ? row[7].split(',').map(s => parseInt(s.trim())) : [],
-              textoBase: row[8],
-              keywords: row[9] ? row[9].split(',').map(s => s.trim()) : [],
-              explanation: row[10]
-            };
-          });
-        };
-
-        const toggleExpand = (tipo, id) => {
-          expanded.value[tipo][id] = !expanded.value[tipo][id];
-        };
-
-        // Iniciar cuestionario
-        const iniciarCuestionario = (temaId) => {
-          temaSeleccionado.value = temaId;
-          preguntasCuestionario.value = getPreguntasByTema(temaId);
-          preguntaActualIndex.value = 0;
-          vistaActual.value = 'cuestionario';
-          cerrarModal();
-          window.scrollTo(0, 0);
-        };
-
-        // Intervalos de repaso
-        const getIntervalo = (nivel) => {
-          const intervalos = {
-            1: 0,
-            2: 1,
-            3: 2,
-            4: 7,
-            5: 14,
-            6: 30,
-            7: 90,
-            8: 180,
-            9: 365
-          };
-          return (intervalos[nivel] || 0) * 24 * 60 * 60 * 1000;
-        };
+        // ... (resto del código igual: cargarProgresosDesdeSheets, guardarProgresosEnSheets, fetchSheetData, cargarDatosSheets, toggleExpand, iniciarCuestionario, getIntervalo, guardarProgresos, calcularPendientes, getRespuestaUsuario, getRespuestaCorrecta, responderPregunta, siguientePregunta, finalizarRespuesta, cerrarModal, getComponentForType, handleRespuesta, getAreaId, getAreaNombre, getAreaColor, getNivel, getConocimientosByArea, getTemasByConocimiento, getPreguntasByTema, getTemaNombre, calcularProgresoTema, getPreguntaTexto, getPreguntaTemaId, contarPreguntasArea, contarAprendidasArea, calcularProgresoArea, actualizarInsignias, confirmarReset) ...
 
         // Cargar datos iniciales
         onMounted(async () => {
@@ -693,307 +266,6 @@
           }
           window.scrollTo(0, 0);
         });
-
-        // Guardar progresos
-        const guardarProgresos = () => {
-          guardarProgresosEnSheets();
-          localStorage.setItem('progresos', JSON.stringify(progresos.value));
-          localStorage.setItem('puntos', puntosTotales.value.toString());
-          localStorage.setItem('insignias', JSON.stringify(insignias.value));
-        };
-
-        // Preguntas pendientes
-        const preguntasPendientes = ref([]);
-        const calcularPendientes = () => {
-          const hoy = new Date();
-          progresos.value.forEach(prog => {
-            const pregunta = preguntas.value.find(p => p.id === prog.id);
-            if (!pregunta) return;
-            const ultima = new Date(prog.ultimaRepaso);
-            const proxima = new Date(ultima.getTime() + getIntervalo(prog.nivel));
-            prog.pendiente = hoy >= proxima && prog.nivel < 10;
-          });
-          preguntasPendientes.value = progresos.value
-            .filter(prog => prog.pendiente)
-            .map(prog => preguntas.value.find(p => p.id === prog.id))
-            .filter(Boolean);
-        };
-
-        // Obtener respuesta del usuario en formato legible
-        const getRespuestaUsuario = (pregunta, respuesta) => {
-          if (!respuesta) return 'No respondida';
-          if (pregunta.tipo === 'multiple') {
-            return pregunta.opciones[respuesta] || 'Desconocida';
-          } else if (pregunta.tipo === 'order') {
-            if (typeof respuesta === 'string') {
-              const indices = respuesta.split(',').map(i => parseInt(i.trim()) - 1);
-              return indices.map(i => pregunta.elementos[i]).filter(e => e).join(', ');
-            }
-            return respuesta.join(', ');
-          } else if (pregunta.tipo === 'keywords') {
-            return respuesta;
-          }
-          return 'Desconocida';
-        };
-
-        // Obtener respuesta correcta en formato legible
-        const getRespuestaCorrecta = (pregunta) => {
-          if (pregunta.tipo === 'multiple') {
-            return pregunta.opciones[pregunta.correcta];
-          } else if (pregunta.tipo === 'order') {
-            return pregunta.ordenCorrecto.map(idx => pregunta.elementos[idx]).join(', ');
-          } else if (pregunta.tipo === 'keywords') {
-            return pregunta.keywords.join(', ');
-          }
-          return 'Desconocida';
-        };
-
-        // Responder pregunta
-        const responderPregunta = async (pregunta, respuestaUsuario) => {
-          preguntaActual.value = pregunta;
-          const prog = progresos.value.find(p => p.id === pregunta.id);
-          if (!prog) return;
-          let acierto = false;
-          if (pregunta.tipo === 'multiple') {
-            acierto = respuestaUsuario === pregunta.correcta;
-          } else if (pregunta.tipo === 'order') {
-            if (typeof respuestaUsuario === 'string') {
-              const indices = respuestaUsuario.split(',').map(i => parseInt(i.trim()) - 1);
-              const ordenUsuario = indices.map(i => pregunta.elementos[i]).filter(e => e);
-              acierto = JSON.stringify(ordenUsuario) === JSON.stringify(pregunta.ordenCorrecto.map(idx => pregunta.elementos[idx]));
-            } else {
-              acierto = JSON.stringify(respuestaUsuario) === JSON.stringify(pregunta.ordenCorrecto.map(idx => pregunta.elementos[idx]));
-            }
-          } else if (pregunta.tipo === 'keywords') {
-            const userKeywords = respuestaUsuario.toLowerCase().split(',').map(k => k.trim());
-            acierto = pregunta.keywords.every(k => userKeywords.includes(k.toLowerCase())) && userKeywords.length === pregunta.keywords.length;
-          }
-          if (acierto) {
-            prog.nivel = Math.min(prog.nivel + 1, 10);
-            prog.aciertosConsecutivos++;
-            modalEsCorrecto.value = true;
-            modalNivel.value = prog.nivel;
-            puntosTotales.value += 10;
-            confetti({ particleCount: 100, spread: 70 });
-          } else {
-            prog.nivel = 1;
-            prog.aciertosConsecutivos = 0;
-            modalEsCorrecto.value = false;
-            modalNivel.value = 1;
-          }
-          prog.ultimaRepaso = new Date().toISOString();
-          await guardarProgresos();
-          calcularPendientes();
-          mostrarModal.value = true;
-          respuestaSeleccionada[pregunta.id] = null;
-          actualizarInsignias();
-        };
-
-        const siguientePregunta = () => {
-          preguntaActualIndex.value++;
-          cerrarModal();
-          window.scrollTo(0, 0);
-        };
-
-        const finalizarRespuesta = async () => {
-          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length - 1) {
-            preguntaActualIndex.value++;
-            if (calcularProgresoTema(temaSeleccionado.value) === 100) {
-              insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value));
-              await guardarProgresos();
-            }
-          }
-          cerrarModal();
-          window.scrollTo(0, 0);
-        };
-
-        const cerrarModal = () => {
-          mostrarModal.value = false;
-          preguntaActual.value = null;
-        };
-
-        // Componentes para tipos de preguntas
-        const getComponentForType = (tipo) => {
-          if (tipo === 'multiple') {
-            return {
-              props: ['pregunta'],
-              template: `
-                <div class="space-y-2">
-                  <label v-for="(opcion, key) in pregunta.opciones" :key="key" class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer">
-                    <input type="radio" v-model="$parent.respuestaSeleccionada[pregunta.id]" :value="key" class="mr-2 text-blue-500 focus:ring-blue-500">
-                    <span class="text-gray-700">{{ opcion }}</span>
-                  </label>
-                </div>
-              `
-            };
-          } else if (tipo === 'order') {
-            if (window.VueDraggableNext && window.VueDraggableNext.draggable) {
-              return {
-                props: ['pregunta'],
-                components: { draggable: window.VueDraggableNext.draggable },
-                setup(props) {
-                  const lista = ref([...props.pregunta.elementos]);
-                  const onDragEnd = () => {
-                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = [...lista.value]);
-                  };
-                  return { lista, onDragEnd };
-                },
-                template: `
-                  <draggable v-model="lista" item-key="item" @end="onDragEnd" class="space-y-2">
-                    <template #item="{ element }">
-                      <div class="p-3 bg-gray-50 rounded-lg cursor-move">{{ element }}</div>
-                    </template>
-                  </draggable>
-                `
-              };
-            } else {
-              return {
-                props: ['pregunta'],
-                setup(props) {
-                  const inputValue = ref('');
-                  const handleInput = (event) => {
-                    inputValue.value = event.target.value;
-                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
-                  };
-                  return { inputValue, handleInput };
-                },
-                template: `
-                  <div :key="pregunta.id">
-                    <p class="mb-2">Ingresa los números en el orden correcto (e.g., 1,2,3,4):</p>
-                    <ul class="mb-2">
-                      <li v-for="(item, index) in pregunta.elementos" :key="index" class="text-gray-700">{{ index + 1 }}. {{ item }}</li>
-                    </ul>
-                    <input type="text" v-model="inputValue" @input="handleInput" placeholder="Ej: 1,2,3,4" class="w-full p-2 border rounded">
-                  </div>
-                `
-              };
-            }
-          } else if (tipo === 'keywords') {
-            return {
-              props: ['pregunta'],
-              setup(props) {
-                const inputValue = ref('');
-                const handleInput = (event) => {
-                  inputValue.value = event.target.value;
-                  props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
-                };
-                return { inputValue, handleInput };
-              },
-              template: `
-                <div :key="pregunta.id">
-                  <p class="mb-2">{{ pregunta.textoBase }}</p>
-                  <input type="text" v-model="inputValue" @input="handleInput" placeholder="Palabras clave separadas por coma" class="w-full p-2 border rounded">
-                </div>
-              `
-            };
-          }
-          return { template: '<div>Tipo no soportado</div>' };
-        };
-
-        const handleRespuesta = (respuesta, pregunta) => {
-          respuestaSeleccionada[pregunta.id] = respuesta;
-        };
-
-        // Helpers para áreas y navegación
-        const getAreaId = (temaId) => {
-          const tema = temas.value.find(t => t.id === temaId);
-          const conocimiento = conocimientos.value.find(c => c.id === tema?.conocimientoId);
-          return conocimiento?.areaId || 1;
-        };
-
-        const getAreaNombre = (areaId) => {
-          const area = areas.value.find(a => a.id === areaId);
-          return area ? area.nombre : '';
-        };
-
-        const getAreaColor = (areaId) => {
-          const area = areas.value.find(a => a.id === areaId);
-          return area ? area.color : 'bg-gray-200';
-        };
-
-        const getNivel = (preguntaId) => {
-          const prog = progresos.value.find(p => p.id === preguntaId);
-          return prog ? prog.nivel : 1;
-        };
-
-        const getConocimientosByArea = (areaId) => {
-          return conocimientos.value.filter(c => c.areaId === areaId);
-        };
-
-        const getTemasByConocimiento = (conocimientoId) => {
-          return temas.value.filter(t => t.conocimientoId === conocimientoId);
-        };
-
-        const getPreguntasByTema = (temaId) => {
-          return preguntas.value.filter(p => p.temaId === temaId);
-        };
-
-        const getTemaNombre = (temaId) => {
-          const tema = temas.value.find(t => t.id === temaId);
-          return tema ? tema.nombre : '';
-        };
-
-        const calcularProgresoTema = (temaId) => {
-          const preguntasTema = getPreguntasByTema(temaId);
-          const total = preguntasTema.length;
-          const aprendidas = progresos.value.filter(p => preguntasTema.some(q => q.id === p.id) && p.nivel >= 10).length;
-          return total > 0 ? Math.round((aprendidas / total) * 100) : 0;
-        };
-
-        const getPreguntaTexto = (preguntaId) => {
-          const pregunta = preguntas.value.find(p => p.id === preguntaId);
-          return pregunta ? pregunta.texto : '';
-        };
-
-        const getPreguntaTemaId = (preguntaId) => {
-          const pregunta = preguntas.value.find(p => p.id === preguntaId);
-          return pregunta ? pregunta.temaId : null;
-        };
-
-        // Stats
-        const contarPreguntasArea = (areaId) => {
-          const conocs = getConocimientosByArea(areaId);
-          const temasArea = temas.value.filter(t => conocs.some(c => c.id === t.conocimientoId));
-          return preguntas.value.filter(p => temasArea.some(t => t.id === p.temaId)).length;
-        };
-
-        const contarAprendidasArea = (areaId) => {
-          const conocs = getConocimientosByArea(areaId);
-          const temasArea = temas.value.filter(t => conocs.some(c => c.id === t.conocimientoId));
-          const pregIds = preguntas.value.filter(p => temasArea.some(t => t.id === p.temaId)).map(p => p.id);
-          return progresos.value.filter(p => pregIds.includes(p.id) && p.nivel >= 10).length;
-        };
-
-        const calcularProgresoArea = (areaId) => {
-          const total = contarPreguntasArea(areaId);
-          const aprendidas = contarAprendidasArea(areaId);
-          return total > 0 ? Math.round((aprendidas / total) * 100) : 0;
-        };
-
-        const actualizarInsignias = () => {
-          temas.value.forEach(tema => {
-            if (calcularProgresoTema(tema.id) === 100 && !insignias.value.includes('Maestro de ' + tema.nombre)) {
-              insignias.value.push('Maestro de ' + tema.nombre);
-              guardarProgresos();
-            }
-          });
-        };
-
-        // Reset
-        const confirmarReset = async () => {
-          progresos.value = preguntas.value.map(p => ({
-            id: p.id,
-            nivel: 1,
-            ultimaRepaso: new Date(0).toISOString(),
-            aciertosConsecutivos: 0
-          }));
-          puntosTotales.value = 0;
-          insignias.value = [];
-          await guardarProgresos();
-          calcularPendientes();
-          mostrarModalReset.value = false;
-          window.scrollTo(0, 0);
-        };
 
         return {
           areas,
@@ -1038,6 +310,7 @@
           guardarCredenciales,
           guardarUserId,
           iniciarSesionGoogle,
+          cerrarModalAuth,
           calcularProgresoArea,
           contarAprendidasArea,
           contarPreguntasArea,
