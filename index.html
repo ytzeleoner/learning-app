@@ -207,7 +207,7 @@
       <div class="space-y-4">
         <div v-for="area in areas" :key="area.id">
           <button @click="toggleExpand('area', area.id)"
-                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(getAreaId(area.id))]"
+                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(area.id)]"
                   class="hover:opacity-90 transition-opacity">
             {{ area.nombre }} (Progreso: {{ calcularProgresoArea(area.id) }}%)
           </button>
@@ -389,44 +389,57 @@
           tema: {}
         });
 
-        // Inicializar Google Identity Services
+        // Inicializar Google Identity Services con espera activa
         const initGoogleAuth = () => {
           return new Promise((resolve) => {
-            console.log('Initializing Google Identity Services with clientId:', clientId.value);
-            if (!window.google) {
-              console.error('Google Identity Services library not loaded');
-              mostrarModalAuth.value = true;
+            console.log('Attempting to initialize Google Identity Services with clientId:', clientId.value);
+            if (!clientId.value) {
+              console.error('Client ID not available, showing credentials modal');
+              mostrarModalCredenciales.value = true;
               resolve();
               return;
             }
-            const client = google.accounts.oauth2.initTokenClient({
-              client_id: clientId.value,
-              scope: 'https://www.googleapis.com/auth/spreadsheets',
-              callback: (response) => {
-                console.log('OAuth callback response:', response);
-                if (response.access_token) {
-                  accessToken.value = response.access_token;
-                  isSignedIn.value = true;
-                  console.log('Access token obtained:', accessToken.value);
-                  mostrarModalAuth.value = false;
-                  guardarProgresosEnSheets();
-                } else {
-                  console.error('No access token received:', response.error || 'Unknown error');
-                  isSignedIn.value = false;
-                  accessToken.value = null;
-                  mostrarModalAuth.value = true;
-                }
-              },
-              error_callback: (error) => {
-                console.error('OAuth error:', JSON.stringify(error, null, 2));
-                isSignedIn.value = false;
-                accessToken.value = null;
+            const waitForGoogle = (attempts = 20, interval = 500) => {
+              if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+                console.log('Google Identity Services library loaded');
+                const client = google.accounts.oauth2.initTokenClient({
+                  client_id: clientId.value,
+                  scope: 'https://www.googleapis.com/auth/spreadsheets',
+                  callback: (response) => {
+                    console.log('OAuth callback response:', response);
+                    if (response.access_token) {
+                      accessToken.value = response.access_token;
+                      isSignedIn.value = true;
+                      console.log('Access token obtained:', accessToken.value);
+                      mostrarModalAuth.value = false;
+                      guardarProgresosEnSheets();
+                    } else {
+                      console.error('No access token received:', response.error || 'Unknown error');
+                      isSignedIn.value = false;
+                      accessToken.value = null;
+                      mostrarModalAuth.value = true;
+                    }
+                  },
+                  error_callback: (error) => {
+                    console.error('OAuth error:', JSON.stringify(error, null, 2));
+                    isSignedIn.value = false;
+                    accessToken.value = null;
+                    mostrarModalAuth.value = true;
+                  }
+                });
+                window.googleAuthClient = client;
+                console.log('Google Identity Services initialized successfully');
+                resolve();
+              } else if (attempts > 0) {
+                console.log('Google Identity Services not loaded yet, retrying... Attempts left:', attempts);
+                setTimeout(() => waitForGoogle(attempts - 1, interval), interval);
+              } else {
+                console.error('Failed to load Google Identity Services after retries');
                 mostrarModalAuth.value = true;
+                resolve();
               }
-            });
-            window.googleAuthClient = client;
-            console.log('Google Identity Services initialized');
-            resolve();
+            };
+            waitForGoogle();
           });
         };
 
@@ -434,8 +447,15 @@
         const iniciarSesionGoogle = () => {
           console.log('Attempting Google sign-in');
           if (!window.googleAuthClient) {
-            console.error('Google auth client not initialized');
-            mostrarModalAuth.value = true;
+            console.error('Google auth client not initialized, retrying initialization');
+            initGoogleAuth().then(() => {
+              if (window.googleAuthClient) {
+                window.googleAuthClient.requestAccessToken();
+              } else {
+                console.error('Failed to initialize Google auth client');
+                mostrarModalAuth.value = true;
+              }
+            });
             return;
           }
           window.googleAuthClient.requestAccessToken();
@@ -654,6 +674,7 @@
             nombre: row[1],
             color: row[2] || 'bg-gray-200'
           }));
+          console.log('Areas loaded:', areas.value);
 
           const conocimientosData = await fetchSheetData('Conocimientos', 'A:C');
           conocimientos.value = conocimientosData.slice(1).map(row => ({
