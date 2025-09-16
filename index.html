@@ -580,7 +580,7 @@
           }
         };
 
-        // Guardar progresos en Google Sheets
+        // Guardar progresos en Google Sheets (Soporte multiID)
         const guardarProgresosEnSheets = async () => {
           if (!isSignedIn.value || !accessToken.value) {
             console.warn('User not signed in, showing auth modal');
@@ -588,50 +588,55 @@
             return;
           }
           try {
-            const data = {
+            // Leer datos existentes de la hoja
+            const response = await fetch(
+              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A:G?key=${apiKey.value}&majorDimension=ROWS`
+            );
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Error fetching existing progresos: ${response.status} ${errorText}`);
+            }
+            const data = await response.json();
+            let rows = data.values || [['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias']];
+
+            // Filtrar filas que no pertenecen al usuario actual
+            const otherUsersRows = rows.slice(1).filter(row => row[0] !== userId.value);
+
+            // Crear filas para el usuario actual
+            const userRows = progresos.value.map(progreso => [
+              userId.value,
+              progreso.id,
+              progreso.nivel,
+              progreso.ultimaRepaso,
+              progreso.aciertosConsecutivos,
+              puntosTotales.value,
+              JSON.stringify(insignias.value)
+            ]);
+
+            // Combinar filas: encabezado + filas de otros usuarios + filas del usuario actual
+            const updatedRows = [
+              ['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias'],
+              ...otherUsersRows,
+              ...userRows
+            ];
+
+            console.log('Saving to Sheets:', JSON.stringify({
               userId: userId.value,
               progresos: progresos.value,
               puntosTotales: puntosTotales.value,
               insignias: insignias.value
-            };
-            console.log('Saving to Sheets:', JSON.stringify(data));
-            const rows = [
-              ['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias']
-            ];
-            data.progresos.forEach(progreso => {
-              rows.push([
-                data.userId,
-                progreso.id,
-                progreso.nivel,
-                progreso.ultimaRepaso,
-                progreso.aciertosConsecutivos,
-                data.puntosTotales,
-                JSON.stringify(data.insignias)
-              ]);
-            });
-            const clearResponse = await fetch(
-              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A:G:clear`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${accessToken.value}`,
-                  'Content-Type': 'application/json'
-                }
-              }
-            );
-            if (!clearResponse.ok) {
-              const errorText = await clearResponse.text();
-              throw new Error(`Error clearing progresos: ${clearResponse.status} ${errorText}`);
-            }
+            }));
+
+            // Escribir todas las filas en la hoja
             const updateResponse = await fetch(
-              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A1:G${rows.length}?valueInputOption=RAW`,
+              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A1:G${updatedRows.length}?valueInputOption=RAW`,
               {
                 method: 'PUT',
                 headers: {
                   'Authorization': `Bearer ${accessToken.value}`,
                   'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ values: rows })
+                body: JSON.stringify({ values: updatedRows })
               }
             );
             if (!updateResponse.ok) {
