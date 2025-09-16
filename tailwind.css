@@ -9,6 +9,9 @@
 .bg-opacity-50 { background-opacity: 0.5; }
 .bg-blue-500 { background-color: #3b82f6; }
 .bg-blue-600 { background-color: #2563eb; }
+.bg-blue-200 { background-color: #bfdbfe; } /* Para Agile */
+.bg-green-200 { background-color: #bbf7d0; } /* Para Lean */
+.bg-purple-200 { background-color: #e9d5ff; } /* Para otras áreas como Scrum */
 .bg-gray-200 { background-color: #e5e7eb; }
 .bg-gray-300 { background-color: #d1d5db; }
 .bg-gray-400 { background-color: #9ca3af; }
