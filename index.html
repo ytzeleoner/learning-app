@@ -145,7 +145,7 @@
         </p>
         <div v-if="preguntaActual" class="mt-4 text-left">
           <p class="text-gray-700"><strong>Pregunta:</strong> {{ preguntaActual.texto }}</p>
-          <p class="text-gray-700"><strong>Tu respuesta:</strong> {{ getRespuestaUsuario(preguntaActual, respuestaSeleccionada[preguntaActual.id]) }}</p>
+          <p class="text-gray-700"><strong>Tu respuesta:</strong> {{ getRespuestaUsuario(preguntaActual, respuestaUsuarioModal) }}</p>
           <p class="text-gray-700"><strong>Respuesta correcta:</strong> {{ getRespuestaCorrecta(preguntaActual) }}</p>
           <p class="text-gray-700"><strong>Explicación:</strong> {{ preguntaActual.explanation || 'No hay explicación disponible.' }}</p>
         </div>
@@ -207,8 +207,12 @@
       <div class="space-y-4">
         <div v-for="area in areas" :key="area.id">
           <button @click="toggleExpand('area', area.id)"
-                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg', getAreaColor(area.id)]"
+                  :class="['w-full py-3 px-4 text-left font-semibold rounded-lg flex items-center', getAreaColor(area.id)]"
                   class="hover:opacity-90 transition-opacity">
+            <span v-if="area.icono" class="mr-2">
+              <img v-if="area.icono.startsWith('http')" :src="area.icono" alt="Icono de área" class="w-6 h-6 inline-block">
+              <span v-else>{{ area.icono }}</span>
+            </span>
             {{ area.nombre }} (Progreso: {{ calcularProgresoArea(area.id) }}%)
           </button>
           <div v-if="expanded.area[area.id]" class="ml-4 space-y-2 mt-2">
@@ -262,7 +266,15 @@
       <h2 class="text-2xl font-semibold text-gray-800 mb-4">
         Cuestionario: {{ getTemaNombre(temaSeleccionado) }} (Pregunta {{ preguntaActualIndex + 1 }} / {{ preguntasCuestionario.length }})
       </h2>
-      <div v-if="preguntaActualIndex < preguntasCuestionario.length" class="space-y-6">
+      <!-- Imagen de referencia del tema -->
+      <div v-if="preguntaActualIndex === 0 && getTemaImagen(temaSeleccionado)" class="mb-6 text-center">
+        <img :src="getTemaImagen(temaSeleccionado)" :alt="'Portada de ' + getTemaNombre(temaSeleccionado)" class="max-w-xs mx-auto rounded-lg shadow-md">
+        <p class="text-gray-600 mt-2">Comienza el cuestionario de {{ getTemaNombre(temaSeleccionado) }}</p>
+        <button @click="preguntaActualIndex = 1" class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+          Empezar Cuestionario
+        </button>
+      </div>
+      <div v-else-if="preguntaActualIndex < preguntasCuestionario.length" class="space-y-6">
         <div :class="['p-6 rounded-lg shadow-md', getAreaColor(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId))]">
           <h3 class="text-xl font-semibold text-gray-800">{{ preguntasCuestionario[preguntaActualIndex].texto }}</h3>
           <p class="text-sm text-gray-500 mb-2">Área: {{ getAreaNombre(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId)) }} | Nivel: {{ getNivel(preguntasCuestionario[preguntaActualIndex].id) }}</p>
@@ -314,7 +326,13 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div v-for="area in areas" :key="area.id" class="p-4 rounded-lg shadow"
              :class="getAreaColor(area.id)">
-          <h3 class="text-lg font-semibold text-gray-800">{{ area.nombre }}</h3>
+          <h3 class="text-lg font-semibold text-gray-800 flex items-center">
+            <span v-if="area.icono" class="mr-2">
+              <img v-if="area.icono.startsWith('http')" :src="area.icono" alt="Icono de área" class="w-6 h-6 inline-block">
+              <span v-else>{{ area.icono }}</span>
+            </span>
+            {{ area.nombre }}
+          </h3>
           <p class="text-gray-600">Progreso: {{ calcularProgresoArea(area.id) }}%</p>
           <p class="text-gray-600">Aprendidas: {{ contarAprendidasArea(area.id) }} / {{ contarPreguntasArea(area.id) }}</p>
           <div class="mt-2 bg-gray-200 rounded-full h-2.5">
@@ -349,6 +367,7 @@
         // Progresos y gamificación
         const progresos = ref([]);
         const respuestaSeleccionada = reactive({});
+        const respuestaUsuarioModal = ref(null); // Nueva variable para almacenar la respuesta del usuario para el modal
         const mostrarModal = ref(false);
         const modalEsCorrecto = ref(false);
         const modalNivel = ref(0);
@@ -580,7 +599,7 @@
           }
         };
 
-        // Guardar progresos en Google Sheets (Soporte multiID)
+        // Guardar progresos en Google Sheets
         const guardarProgresosEnSheets = async () => {
           if (!isSignedIn.value || !accessToken.value) {
             console.warn('User not signed in, showing auth modal');
@@ -588,7 +607,6 @@
             return;
           }
           try {
-            // Leer datos existentes de la hoja
             const response = await fetch(
               `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A:G?key=${apiKey.value}&majorDimension=ROWS`
             );
@@ -598,11 +616,7 @@
             }
             const data = await response.json();
             let rows = data.values || [['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias']];
-
-            // Filtrar filas que no pertenecen al usuario actual
             const otherUsersRows = rows.slice(1).filter(row => row[0] !== userId.value);
-
-            // Crear filas para el usuario actual
             const userRows = progresos.value.map(progreso => [
               userId.value,
               progreso.id,
@@ -612,22 +626,17 @@
               puntosTotales.value,
               JSON.stringify(insignias.value)
             ]);
-
-            // Combinar filas: encabezado + filas de otros usuarios + filas del usuario actual
             const updatedRows = [
               ['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias'],
               ...otherUsersRows,
               ...userRows
             ];
-
             console.log('Saving to Sheets:', JSON.stringify({
               userId: userId.value,
               progresos: progresos.value,
               puntosTotales: puntosTotales.value,
               insignias: insignias.value
             }));
-
-            // Escribir todas las filas en la hoja
             const updateResponse = await fetch(
               `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A1:G${updatedRows.length}?valueInputOption=RAW`,
               {
@@ -673,11 +682,12 @@
 
         // Cargar todos los datos de Sheets
         const cargarDatosSheets = async () => {
-          const areasData = await fetchSheetData('Areas', 'A:C');
+          const areasData = await fetchSheetData('Areas', 'A:D'); // Actualizado para incluir icono
           areas.value = areasData.slice(1).map(row => ({
             id: parseInt(row[0]),
             nombre: row[1],
-            color: row[2] || 'bg-gray-200'
+            color: row[2] || 'bg-gray-200',
+            icono: row[3] || '' // Nueva propiedad icono
           }));
           console.log('Areas loaded:', areas.value);
 
@@ -688,11 +698,12 @@
             nombre: row[2]
           }));
 
-          const temasData = await fetchSheetData('Temas', 'A:C');
+          const temasData = await fetchSheetData('Temas', 'A:D'); // Actualizado para incluir imagen
           temas.value = temasData.slice(1).map(row => ({
             id: parseInt(row[0]),
             conocimientoId: parseInt(row[1]),
-            nombre: row[2]
+            nombre: row[2],
+            imagen: row[3] || '' // Nueva propiedad imagen
           }));
 
           const preguntasData = await fetchSheetData('Preguntas', 'A:K');
@@ -806,6 +817,7 @@
         // Responder pregunta
         const responderPregunta = async (pregunta, respuestaUsuario) => {
           preguntaActual.value = pregunta;
+          respuestaUsuarioModal.value = respuestaUsuario; // Guardar respuesta para el modal
           const prog = progresos.value.find(p => p.id === pregunta.id);
           if (!prog) return;
           let acierto = false;
@@ -865,6 +877,7 @@
         const cerrarModal = () => {
           mostrarModal.value = false;
           preguntaActual.value = null;
+          respuestaUsuarioModal.value = null; // Limpiar respuesta del modal
         };
 
         // Componentes para tipos de preguntas
@@ -908,7 +921,7 @@
                   const inputValue = ref('');
                   const handleInput = (event) => {
                     inputValue.value = event.target.value;
-                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
+                    props.pregunta && (respuestaSeleccionada[pregunta.id] = inputValue.value);
                   };
                   return { inputValue, handleInput };
                 },
@@ -930,7 +943,7 @@
                 const inputValue = ref('');
                 const handleInput = (event) => {
                   inputValue.value = event.target.value;
-                  props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
+                  props.pregunta && (respuestaSeleccionada[pregunta.id] = inputValue.value);
                 };
                 return { inputValue, handleInput };
               },
@@ -986,6 +999,11 @@
         const getTemaNombre = (temaId) => {
           const tema = temas.value.find(t => t.id === temaId);
           return tema ? tema.nombre : '';
+        };
+
+        const getTemaImagen = (temaId) => {
+          const tema = temas.value.find(t => t.id === temaId);
+          return tema ? tema.imagen : '';
         };
 
         const calcularProgresoTema = (temaId) => {
@@ -1068,11 +1086,7 @@
           progresos,
           preguntasPendientes,
           respuestaSeleccionada,
-          vistaActual,
-          expanded,
-          temaSeleccionado,
-          preguntaActualIndex,
-          preguntasCuestionario,
+          respuestaUsuarioModal,
           mostrarModal,
           modalEsCorrecto,
           modalNivel,
@@ -1093,6 +1107,11 @@
           userId,
           tempUserId,
           mostrarModalUserId,
+          vistaActual,
+          expanded,
+          temaSeleccionado,
+          preguntaActualIndex,
+          preguntasCuestionario,
           toggleExpand,
           iniciarCuestionario,
           responderPregunta,
@@ -1116,6 +1135,7 @@
           getTemasByConocimiento,
           getPreguntasByTema,
           getTemaNombre,
+          getTemaImagen,
           getPreguntaTexto,
           getPreguntaTemaId,
           getComponentForType,
