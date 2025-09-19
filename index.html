@@ -105,24 +105,6 @@
       </div>
     </div>
 
-    <!-- Modal para confirmar reseteo -->
-    <div v-if="mostrarModalReset" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg p-6 max-w-md w-full text-center">
-        <h3 class="text-xl font-semibold text-gray-800">¿Resetear Progresos?</h3>
-        <p class="text-gray-600 mt-2">Esto pondrá todas las preguntas en nivel 1 y las hará pendientes.</p>
-        <div class="mt-4 flex justify-center space-x-4">
-          <button @click="confirmarReset"
-                  class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
-            Confirmar
-          </button>
-          <button @click="mostrarModalReset = false"
-                  class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors">
-            Cancelar
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- Header -->
     <header class="bg-white shadow rounded-lg p-6 mb-6 text-center">
       <h1 class="text-3xl font-bold text-gray-800">Aprende con Repaso Espaciado</h1>
@@ -191,7 +173,7 @@
             <span>Área: {{ getAreaNombre(getAreaId(pregunta.temaId)) }} | Nivel: {{ getNivel(pregunta.id) }}</span>
             <img v-if="getTemaImagen(pregunta.temaId)" :src="getTemaImagen(pregunta.temaId)" alt="Miniatura del cuestionario" class="max-w-[10%] h-auto rounded-lg ml-4">
           </div>
-          <img v-if="pregunta.imagen" :src="pregunta.imagen" alt="Imagen de la pregunta" class="max-w-full mb-4 rounded-lg">
+          <img v-if="pregunta.imagen" :src="pregunta.imagen" alt="Imagen de la pregunta" class="max-w-md mb-4 rounded-lg">
           <component :is="getComponentForType(pregunta.tipo)" :pregunta="pregunta" @respuesta="handleRespuesta($event, pregunta)"></component>
           <button @click="responderPregunta(pregunta, respuestaSeleccionada[pregunta.id])"
                   :disabled="!respuestaSeleccionada[pregunta.id]"
@@ -243,9 +225,6 @@
                       <h4 class="font-medium">{{ pregunta.texto }}</h4>
                       <p class="text-sm text-gray-500">Nivel actual: {{ getNivel(pregunta.id) }}</p>
                       <p class="text-sm text-gray-500">Tipo: {{ pregunta.tipo }}</p>
-                      <div v-if="pregunta.imagen" class="mt-2">
-                        <img :src="pregunta.imagen" alt="Imagen de la pregunta" class="max-w-full rounded-lg">
-                      </div>
                       <div v-if="pregunta.tipo === 'multiple'" class="text-sm text-gray-600">
                         Opciones: {{ Object.values(pregunta.opciones).join(', ') }}
                         <br>Correcta: {{ pregunta.opciones[pregunta.correcta] }}
@@ -298,7 +277,7 @@
             <span>Área: {{ getAreaNombre(getAreaId(preguntasCuestionario[preguntaActualIndex - 1].temaId)) }} | Nivel: {{ getNivel(preguntasCuestionario[preguntaActualIndex - 1].id) }}</span>
             <img v-if="getTemaImagen(temaSeleccionado)" :src="getTemaImagen(temaSeleccionado)" alt="Miniatura del cuestionario" class="max-w-[10%] h-auto rounded-lg ml-4">
           </div>
-          <img v-if="preguntasCuestionario[preguntaActualIndex - 1].imagen" :src="preguntasCuestionario[preguntaActualIndex - 1].imagen" alt="Imagen de la pregunta" class="max-w-full mb-4 rounded-lg">
+          <img v-if="preguntasCuestionario[preguntaActualIndex - 1].imagen" :src="preguntasCuestionario[preguntaActualIndex - 1].imagen" alt="Imagen de la pregunta" class="max-w-md mb-4 rounded-lg">
           <component :is="getComponentForType(preguntasCuestionario[preguntaActualIndex - 1].tipo)" :pregunta="preguntasCuestionario[preguntaActualIndex - 1]" @respuesta="handleRespuesta($event, preguntasCuestionario[preguntaActualIndex - 1])"></component>
           <button @click="responderPregunta(preguntasCuestionario[preguntaActualIndex - 1], respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex - 1].id])"
                   :disabled="!respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex - 1].id]"
@@ -384,7 +363,6 @@
         const temas = ref([]);
         const preguntas = ref([]);
         const preguntasPendientes = ref([]);
-        const ultimosTemas = ref([]);
 
         // Progresos y gamificación
         const progresos = ref([]);
@@ -430,7 +408,7 @@
           tema: {}
         });
 
-        // Inicializar Google Identity Services
+        // Inicializar Google Identity Services con espera activa
         const initGoogleAuth = () => {
           return new Promise((resolve) => {
             console.log('Attempting to initialize Google Identity Services with clientId:', clientId.value);
@@ -587,22 +565,29 @@
             const data = await response.json();
             const rows = data.values || [];
             const userRows = rows.slice(1).filter(row => row[0] === userId.value);
+            const existingIds = userRows.map(row => parseInt(row[1]));
             progresos.value = userRows.map(row => ({
               id: parseInt(row[1]),
-              nivel: parseInt(row[2] || 1),
-              ultimaRepaso: row[3] || new Date(0).toISOString(),
-              aciertosConsecutivos: parseInt(row[4] || 0)
+              nivel: parseInt(row[2]),
+              ultimaRepaso: row[3],
+              aciertosConsecutivos: parseInt(row[4])
             }));
             puntosTotales.value = userRows.length > 0 ? parseInt(userRows[0][5] || 0) : 0;
-            insignias.value = userRows.length > 0 && row[6] ? JSON.parse(userRows[0][6]) : [];
-            console.log('Progresos fetched:', { progresos: progresos.value, puntosTotales: puntosTotales.value, insignias: insignias.value });
-            if (progresos.value.length === 0 && preguntas.value.length > 0) {
-              progresos.value = preguntas.value.map(p => ({
-                id: p.id,
-                nivel: 1,
-                ultimaRepaso: new Date(0).toISOString(),
-                aciertosConsecutivos: 0
-              }));
+            insignias.value = userRows.length > 0 ? JSON.parse(userRows[0][6] || '[]') : [];
+            console.log('Progresos fetched:', progresos.value);
+
+            // Inicializar progresos para preguntas nuevas
+            const missingPreguntas = preguntas.value.filter(p => !existingIds.includes(p.id));
+            if (missingPreguntas.length > 0) {
+              console.log('Inicializando progresos para nuevas preguntas:', missingPreguntas.map(p => p.id));
+              missingPreguntas.forEach(p => {
+                progresos.value.push({
+                  id: p.id,
+                  nivel: 1,
+                  ultimaRepaso: new Date(0).toISOString(),
+                  aciertosConsecutivos: 0
+                });
+              });
               await guardarProgresosEnSheets();
             }
           } catch (error) {
@@ -834,7 +819,6 @@
 
         // Iniciar cuestionario
         const iniciarCuestionario = (temaId) => {
-          console.log('Iniciando cuestionario para tema:', temaId);
           temaSeleccionado.value = temaId;
           preguntasCuestionario.value = getPreguntasByTema(temaId);
           preguntaActualIndex.value = 1; // Iniciar en la primera pregunta
@@ -874,14 +858,10 @@
 
         // Responder pregunta
         const responderPregunta = async (pregunta, respuestaUsuario) => {
-          console.log('Respondiendo pregunta:', pregunta.id, 'con respuesta:', respuestaUsuario);
           preguntaActual.value = pregunta;
-          respuestaUsuarioModal.value = respuestaUsuario;
+          respuestaUsuarioModal.value = respuestaUsuario; // Guardar respuesta para el modal
           const prog = progresos.value.find(p => p.id === pregunta.id);
-          if (!prog) {
-            console.error('No se encontró progreso para la pregunta:', pregunta.id);
-            return;
-          }
+          if (!prog) return;
           let acierto = false;
           if (pregunta.tipo === 'multiple') {
             acierto = respuestaUsuario === pregunta.correcta;
@@ -918,29 +898,24 @@
           actualizarInsignias();
         };
 
-        // Siguiente pregunta
         const siguientePregunta = () => {
           preguntaActualIndex.value++;
           cerrarModal();
           window.scrollTo(0, 0);
         };
 
-        // Finalizar respuesta
         const finalizarRespuesta = async () => {
-          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length) {
+          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length - 1) {
+            preguntaActualIndex.value++;
             if (calcularProgresoTema(temaSeleccionado.value) === 100) {
               insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value));
               await guardarProgresos();
             }
-            vistaActual.value = 'explorar';
-            temaSeleccionado.value = null;
-            preguntaActualIndex.value = 0;
           }
           cerrarModal();
           window.scrollTo(0, 0);
         };
 
-        // Cerrar modal
         const cerrarModal = () => {
           mostrarModal.value = false;
           preguntaActual.value = null;
@@ -1025,7 +1000,6 @@
           return { template: '<div>Tipo no soportado</div>' };
         };
 
-        // Manejar respuesta
         const handleRespuesta = (respuesta, pregunta) => {
           respuestaSeleccionada[pregunta.id] = respuesta;
         };
@@ -1039,7 +1013,7 @@
 
         const getAreaNombre = (areaId) => {
           const area = areas.value.find(a => a.id === areaId);
-          return area ? area.nombre : 'Desconocida';
+          return area ? area.nombre : '';
         };
 
         const getAreaColor = (areaId) => {
@@ -1066,7 +1040,7 @@
 
         const getTemaNombre = (temaId) => {
           const tema = temas.value.find(t => t.id === temaId);
-          return tema ? tema.nombre : 'Desconocido';
+          return tema ? tema.nombre : '';
         };
 
         const getTemaImagen = (temaId) => {
@@ -1083,7 +1057,7 @@
 
         const getPreguntaTexto = (preguntaId) => {
           const pregunta = preguntas.value.find(p => p.id === preguntaId);
-          return pregunta ? pregunta.texto : 'Desconocida';
+          return pregunta ? pregunta.texto : '';
         };
 
         const getPreguntaTemaId = (preguntaId) => {
@@ -1091,7 +1065,7 @@
           return pregunta ? pregunta.temaId : null;
         };
 
-        // Estadísticas
+        // Stats
         const contarPreguntasArea = (areaId) => {
           const conocs = getConocimientosByArea(areaId);
           const temasArea = temas.value.filter(t => conocs.some(c => c.id === t.conocimientoId));
@@ -1120,9 +1094,8 @@
           });
         };
 
-        // Resetear progresos
+        // Reset
         const confirmarReset = async () => {
-          console.log('Confirming reset of progress');
           progresos.value = preguntas.value.map(p => ({
             id: p.id,
             nivel: 1,
