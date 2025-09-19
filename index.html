@@ -189,7 +189,7 @@
           <h3 class="text-xl font-semibold text-gray-800">{{ pregunta.texto }}</h3>
           <div class="flex items-center text-sm text-gray-500 mb-2">
             <span>Área: {{ getAreaNombre(getAreaId(pregunta.temaId)) }} | Nivel: {{ getNivel(pregunta.id) }}</span>
-            <img v-if="getTemaImagen(pregunta.temaId)" :src="getTemaImagen(pregunta.temaId)" alt="Miniatura del cuestionario" class="w-6 h-6 object-cover rounded-lg ml-4">
+            <img v-if="getTemaImagen(pregunta.temaId)" :src="getTemaImagen(pregunta.temaId)" alt="Miniatura del cuestionario" class="max-w-[10%] h-auto rounded-lg ml-4">
           </div>
           <img v-if="pregunta.imagen" :src="pregunta.imagen" alt="Imagen de la pregunta" class="max-w-full mb-4 rounded-lg">
           <component :is="getComponentForType(pregunta.tipo)" :pregunta="pregunta" @respuesta="handleRespuesta($event, pregunta)"></component>
@@ -268,17 +268,17 @@
       </div>
       <!-- Sección Últimos Cuestionarios -->
       <h2 class="text-2xl font-semibold text-gray-800 mb-4 mt-8">Últimos Cuestionarios</h2>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div v-for="tema in ultimosTemas" :key="tema.id" class="bg-white rounded-lg shadow-md overflow-hidden">
-          <img v-if="tema.imagen" :src="tema.imagen" alt="Portada del tema" class="w-full h-32 object-cover">
-          <div v-else class="w-full h-32 bg-gray-200 flex items-center justify-center">
-            <span class="text-gray-500">Sin imagen</span>
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        <div v-for="tema in ultimosTemas" :key="tema.id" class="bg-white rounded-lg shadow-md overflow-hidden transition-transform transform hover:scale-105">
+          <img v-if="tema.imagen" :src="tema.imagen" alt="Portada del tema" class="w-full h-24 object-cover">
+          <div v-else class="w-full h-24 bg-gray-200 flex items-center justify-center">
+            <span class="text-gray-500 text-sm">Sin imagen</span>
           </div>
-          <div class="p-4">
-            <h3 class="text-lg font-semibold text-gray-800">{{ tema.nombre }}</h3>
-            <p class="text-sm text-gray-500">Progreso: {{ calcularProgresoTema(tema.id) }}%</p>
+          <div class="p-3">
+            <h3 class="text-base font-semibold text-gray-800 truncate">{{ tema.nombre }}</h3>
+            <p class="text-xs text-gray-500">Progreso: {{ calcularProgresoTema(tema.id) }}%</p>
             <button @click="iniciarCuestionario(tema.id)"
-                    class="mt-2 w-full py-1 px-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    class="mt-2 w-full py-1 px-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors">
               Hacer Cuestionario
             </button>
           </div>
@@ -289,27 +289,19 @@
     <!-- Vista Cuestionario -->
     <section v-if="vistaActual === 'cuestionario'" class="bg-white shadow rounded-lg p-6 mb-6">
       <h2 class="text-2xl font-semibold text-gray-800 mb-4">
-        Cuestionario: {{ getTemaNombre(temaSeleccionado) }} (Pregunta {{ preguntaActualIndex + 1 }} / {{ preguntasCuestionario.length }})
+        Cuestionario: {{ getTemaNombre(temaSeleccionado) }} (Pregunta {{ preguntaActualIndex }} / {{ preguntasCuestionario.length }})
       </h2>
-      <!-- Imagen de referencia del tema -->
-      <div v-if="preguntaActualIndex === 0 && getTemaImagen(temaSeleccionado)" class="mb-6 text-center">
-        <img :src="getTemaImagen(temaSeleccionado)" :alt="'Portada de ' + getTemaNombre(temaSeleccionado)" class="max-w-xs mx-auto rounded-lg shadow-md">
-        <p class="text-gray-600 mt-2">Comienza el cuestionario de {{ getTemaNombre(temaSeleccionado) }}</p>
-        <button @click="preguntaActualIndex = 1" class="mt-4 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-          Empezar Cuestionario
-        </button>
-      </div>
-      <div v-else-if="preguntaActualIndex < preguntasCuestionario.length" class="space-y-6">
-        <div :class="['p-6 rounded-lg shadow-md', getAreaColor(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId))]">
-          <h3 class="text-xl font-semibold text-gray-800">{{ preguntasCuestionario[preguntaActualIndex].texto }}</h3>
+      <div v-if="preguntaActualIndex <= preguntasCuestionario.length" class="space-y-6">
+        <div :class="['p-6 rounded-lg shadow-md', getAreaColor(getAreaId(preguntasCuestionario[preguntaActualIndex - 1].temaId))]">
+          <h3 class="text-xl font-semibold text-gray-800">{{ preguntasCuestionario[preguntaActualIndex - 1].texto }}</h3>
           <div class="flex items-center text-sm text-gray-500 mb-2">
-            <span>Área: {{ getAreaNombre(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId)) }} | Nivel: {{ getNivel(preguntasCuestionario[preguntaActualIndex].id) }}</span>
-            <img v-if="getTemaImagen(temaSeleccionado)" :src="getTemaImagen(temaSeleccionado)" alt="Miniatura del cuestionario" class="w-6 h-6 object-cover rounded-lg ml-4">
+            <span>Área: {{ getAreaNombre(getAreaId(preguntasCuestionario[preguntaActualIndex - 1].temaId)) }} | Nivel: {{ getNivel(preguntasCuestionario[preguntaActualIndex - 1].id) }}</span>
+            <img v-if="getTemaImagen(temaSeleccionado)" :src="getTemaImagen(temaSeleccionado)" alt="Miniatura del cuestionario" class="max-w-[10%] h-auto rounded-lg ml-4">
           </div>
-          <img v-if="preguntasCuestionario[preguntaActualIndex].imagen" :src="preguntasCuestionario[preguntaActualIndex].imagen" alt="Imagen de la pregunta" class="max-w-full mb-4 rounded-lg">
-          <component :is="getComponentForType(preguntasCuestionario[preguntaActualIndex].tipo)" :pregunta="preguntasCuestionario[preguntaActualIndex]" @respuesta="handleRespuesta($event, preguntasCuestionario[preguntaActualIndex])"></component>
-          <button @click="responderPregunta(preguntasCuestionario[preguntaActualIndex], respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex].id])"
-                  :disabled="!respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex].id]"
+          <img v-if="preguntasCuestionario[preguntaActualIndex - 1].imagen" :src="preguntasCuestionario[preguntaActualIndex - 1].imagen" alt="Imagen de la pregunta" class="max-w-full mb-4 rounded-lg">
+          <component :is="getComponentForType(preguntasCuestionario[preguntaActualIndex - 1].tipo)" :pregunta="preguntasCuestionario[preguntaActualIndex - 1]" @respuesta="handleRespuesta($event, preguntasCuestionario[preguntaActualIndex - 1])"></component>
+          <button @click="responderPregunta(preguntasCuestionario[preguntaActualIndex - 1], respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex - 1].id])"
+                  :disabled="!respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex - 1].id]"
                   class="mt-4 w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors">
             Responder
           </button>
@@ -392,7 +384,7 @@
         const temas = ref([]);
         const preguntas = ref([]);
         const preguntasPendientes = ref([]);
-        const ultimosTemas = ref([]); // Nueva variable para últimos temas
+        const ultimosTemas = ref([]);
 
         // Progresos y gamificación
         const progresos = ref([]);
@@ -401,7 +393,7 @@
         const mostrarModal = ref(false);
         const modalEsCorrecto = ref(false);
         const modalNivel = ref(0);
-        const mostrarModalReset = ref(false); // Inicializado explícitamente como false
+        const mostrarModalReset = ref(false);
         const puntosTotales = ref(0);
         const insignias = ref([]);
         const preguntaActual = ref(null);
@@ -438,7 +430,7 @@
           tema: {}
         });
 
-        // Inicializar Google Identity Services con espera activa
+        // Inicializar Google Identity Services
         const initGoogleAuth = () => {
           return new Promise((resolve) => {
             console.log('Attempting to initialize Google Identity Services with clientId:', clientId.value);
@@ -747,7 +739,7 @@
             console.log('Temas loaded:', temas.value);
 
             // Ordenar temas por ID descendente para los últimos cuestionarios
-            ultimosTemas.value = [...temas.value].sort((a, b) => b.id - a.id).slice(0, 6); // Últimos 6 temas
+            ultimosTemas.value = [...temas.value].sort((a, b) => b.id - a.id).slice(0, 6);
 
             const preguntasData = await fetchSheetData('Preguntas', 'A:L');
             preguntas.value = preguntasData.slice(1).map(row => {
@@ -777,7 +769,7 @@
         // Cargar datos iniciales
         onMounted(async () => {
           console.log('onMounted triggered');
-          mostrarModalReset.value = false; // Asegurar que el modal de reset no se muestre
+          mostrarModalReset.value = false;
           try {
             if (await cargarCredenciales()) {
               await cargarDatosSheets();
@@ -788,7 +780,7 @@
             }
           } catch (error) {
             console.error('Error in onMounted:', error);
-            mostrarModalCredenciales.value = true; // Mostrar modal de credenciales en caso de error
+            mostrarModalCredenciales.value = true;
           }
           window.scrollTo(0, 0);
         });
@@ -842,9 +834,10 @@
 
         // Iniciar cuestionario
         const iniciarCuestionario = (temaId) => {
+          console.log('Iniciando cuestionario para tema:', temaId);
           temaSeleccionado.value = temaId;
           preguntasCuestionario.value = getPreguntasByTema(temaId);
-          preguntaActualIndex.value = 0;
+          preguntaActualIndex.value = 1; // Iniciar en la primera pregunta
           vistaActual.value = 'cuestionario';
           cerrarModal();
           window.scrollTo(0, 0);
@@ -934,12 +927,14 @@
 
         // Finalizar respuesta
         const finalizarRespuesta = async () => {
-          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length - 1) {
-            preguntaActualIndex.value++;
+          if (vistaActual.value === 'cuestionario' && preguntaActualIndex.value >= preguntasCuestionario.value.length) {
             if (calcularProgresoTema(temaSeleccionado.value) === 100) {
               insignias.value.push('Maestro de ' + getTemaNombre(temaSeleccionado.value));
               await guardarProgresos();
             }
+            vistaActual.value = 'explorar';
+            temaSeleccionado.value = null;
+            preguntaActualIndex.value = 0;
           }
           cerrarModal();
           window.scrollTo(0, 0);
@@ -1015,7 +1010,7 @@
                 const inputValue = ref('');
                 const handleInput = (event) => {
                   inputValue.value = event.target.value;
-                  props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
+                  props.pregunta && (respuestaSeleccionada[pregunta.id] = inputValue.value);
                 };
                 return { inputValue, handleInput };
               },
