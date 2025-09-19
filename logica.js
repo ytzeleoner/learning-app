@@ -334,7 +334,9 @@ createApp({
         }
         const data = await response.json();
         const rows = data.values || [];
+        console.log('Rows fetched from Progresos tab:', rows);
         const userRows = rows.slice(1).filter(row => row[0] === userId.value);
+        console.log('Filtered userRows for userId:', userRows);
         const existingIds = userRows.map(row => parseInt(row[1]));
         progresos.value = userRows.map(row => ({
           id: parseInt(row[1]),
@@ -343,10 +345,15 @@ createApp({
           aciertosConsecutivos: parseInt(row[4] || 0)
         }));
         puntosTotales.value = userRows.length > 0 ? parseInt(userRows[0][5] || 0) : 0;
-        insignias.value = userRows.length > 0 && userRows[0][6] ? JSON.parse(userRows[0][6] || '[]') : [];
-        console.log('Progresos fetched:', progresos.value);
+        try {
+          insignias.value = userRows.length > 0 && userRows[0][6] ? JSON.parse(userRows[0][6] || '[]') : [];
+        } catch (e) {
+          console.warn('Error parsing insignias for userId:', userId.value, e);
+          insignias.value = [];
+        }
+        console.log('Progresos fetched:', progresos.value, 'Puntos:', puntosTotales.value, 'Insignias:', insignias.value);
 
-        // Inicializar progresos para preguntas nuevas
+        // Initialize progress for new questions
         const missingPreguntas = preguntas.value.filter(p => !existingIds.includes(p.id));
         if (missingPreguntas.length > 0) {
           console.log('Inicializando progresos para nuevas preguntas:', missingPreguntas.map(p => p.id));
@@ -363,7 +370,6 @@ createApp({
         }
       } catch (error) {
         console.error('Error loading progresos from Sheets:', error.message);
-        // Fallback to empty progress if no data exists for userId
         progresos.value = preguntas.value.length > 0 ? preguntas.value.map(p => ({
           id: p.id,
           nivel: 1,
@@ -462,24 +468,6 @@ createApp({
     };
 
     // Cargar datos iniciales
-    onMounted(async () => {
-      console.log('onMounted triggered');
-      mostrarModalReset.value = false;
-      try {
-        if (await cargarCredenciales()) {
-          await cargarDatosSheets();
-          await cargarProgresosDesdeSheets();
-          calcularPendientes();
-          actualizarInsignias();
-        }
-      } catch (error) {
-        console.error('Error in onMounted:', error);
-        mostrarModalCredenciales.value = true;
-      }
-      window.scrollTo(0, 0);
-    });
-
-    // Cargar credenciales desde localStorage
     const cargarCredenciales = async () => {
       console.log('Loading credentials from localStorage');
       const savedSpreadsheetId = localStorage.getItem('spreadsheetId');
@@ -609,7 +597,7 @@ createApp({
           aciertosConsecutivos: 0,
           pendiente: true
         });
-        await guardarProgresosEnSheets();
+        await guardarProgresos();
         console.log('Progreso inicializado para pregunta:', pregunta.id);
         return;
       }
@@ -618,7 +606,7 @@ createApp({
         acierto = respuestaUsuario === pregunta.correcta;
       } else if (pregunta.tipo === 'order') {
         if (typeof respuestaUsuario === 'string') {
-          const indices = respuesta.split(',').map(i => parseInt(i.trim()) - 1);
+          const indices = respuestaUsuario.split(',').map(i => parseInt(i.trim()) - 1);
           const ordenUsuario = indices.map(i => pregunta.elementos[i]).filter(e => e);
           acierto = JSON.stringify(ordenUsuario) === JSON.stringify(pregunta.ordenCorrecto.map(idx => pregunta.elementos[idx]));
         } else {
@@ -635,6 +623,7 @@ createApp({
         modalNivel.value = prog.nivel;
         puntosTotales.value += 10;
         confetti({ particleCount: 100, spread: 70 });
+        await guardarProgresos(); // Save only on correct answers
       } else {
         prog.nivel = 1;
         prog.aciertosConsecutivos = 0;
@@ -642,7 +631,6 @@ createApp({
         modalNivel.value = 1;
       }
       prog.ultimaRepaso = new Date().toISOString();
-      await guardarProgresos();
       calcularPendientes();
       mostrarModal.value = true;
       respuestaSeleccionada[pregunta.id] = null;
@@ -872,6 +860,30 @@ createApp({
     const toggleExpand = (tipo, id) => {
       expanded.value[tipo][id] = !expanded.value[tipo][id];
     };
+
+    // Cargar datos iniciales
+    onMounted(async () => {
+      console.log('onMounted triggered');
+      mostrarModalReset.value = false;
+      mostrarModal.value = false; // Reset feedback modal
+      preguntaActual.value = null; // Reset current question
+      respuestaUsuarioModal.value = null; // Reset user response
+      Object.keys(respuestaSeleccionada).forEach(key => {
+        respuestaSeleccionada[key] = null; // Reset selected answers
+      });
+      try {
+        if (await cargarCredenciales()) {
+          await cargarDatosSheets();
+          await cargarProgresosDesdeSheets();
+          calcularPendientes();
+          actualizarInsignias();
+        }
+      } catch (error) {
+        console.error('Error in onMounted:', error);
+        mostrarModalCredenciales.value = true;
+      }
+      window.scrollTo(0, 0);
+    });
 
     return {
       areas,
