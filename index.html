@@ -259,6 +259,21 @@
           </div>
         </div>
       </div>
+      <!-- Nueva sección para Últimos Cuestionarios -->
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4 mt-8">Últimos Cuestionarios</h2>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div v-for="tema in temas" :key="tema.id" class="bg-white rounded-lg shadow-md overflow-hidden">
+          <img v-if="tema.imagen" :src="tema.imagen" alt="Portada del tema" class="w-full h-32 object-cover">
+          <div class="p-4">
+            <h3 class="text-lg font-semibold text-gray-800">{{ tema.nombre }}</h3>
+            <p class="text-sm text-gray-500">Progreso: {{ calcularProgresoTema(tema.id) }}%</p>
+            <button @click="iniciarCuestionario(tema.id)"
+                    class="mt-2 w-full py-1 px-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+              Hacer Cuestionario
+            </button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- Vista Cuestionario -->
@@ -274,10 +289,14 @@
           Empezar Cuestionario
         </button>
       </div>
-      <div v-else-if="preguntaActualIndex < preguntasCuestionario.length" class="space-y-6">
+      <div v-if="preguntaActualIndex < preguntasCuestionario.length" class="space-y-6">
         <div :class="['p-6 rounded-lg shadow-md', getAreaColor(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId))]">
           <h3 class="text-xl font-semibold text-gray-800">{{ preguntasCuestionario[preguntaActualIndex].texto }}</h3>
           <p class="text-sm text-gray-500 mb-2">Área: {{ getAreaNombre(getAreaId(preguntasCuestionario[preguntaActualIndex].temaId)) }} | Nivel: {{ getNivel(preguntasCuestionario[preguntaActualIndex].id) }}</p>
+          <!-- Miniatura de la imagen del cuestionario -->
+          <img v-if="getTemaImagen(temaSeleccionado)" :src="getTemaImagen(temaSeleccionado)" alt="Miniatura del cuestionario" class="w-16 h-16 object-cover rounded-lg mb-2">
+          <!-- Imagen de la pregunta (nueva funcionalidad) -->
+          <img v-if="preguntasCuestionario[preguntaActualIndex].imagen" :src="preguntasCuestionario[preguntaActualIndex].imagen" alt="Imagen de la pregunta" class="max-w-full mb-4 rounded-lg">
           <component :is="getComponentForType(preguntasCuestionario[preguntaActualIndex].tipo)" :pregunta="preguntasCuestionario[preguntaActualIndex]" @respuesta="handleRespuesta($event, preguntasCuestionario[preguntaActualIndex])"></component>
           <button @click="responderPregunta(preguntasCuestionario[preguntaActualIndex], respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex].id])"
                   :disabled="!respuestaSeleccionada[preguntasCuestionario[preguntaActualIndex].id]"
@@ -599,7 +618,7 @@
           }
         };
 
-        // Guardar progresos en Google Sheets
+        // Guardar progresos en Google Sheets (Soporte multiID)
         const guardarProgresosEnSheets = async () => {
           if (!isSignedIn.value || !accessToken.value) {
             console.warn('User not signed in, showing auth modal');
@@ -616,7 +635,11 @@
             }
             const data = await response.json();
             let rows = data.values || [['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias']];
+
+            // Filtrar filas que no pertenecen al usuario actual
             const otherUsersRows = rows.slice(1).filter(row => row[0] !== userId.value);
+
+            // Crear filas para el usuario actual
             const userRows = progresos.value.map(progreso => [
               userId.value,
               progreso.id,
@@ -626,17 +649,21 @@
               puntosTotales.value,
               JSON.stringify(insignias.value)
             ]);
+
+            // Combinar filas: encabezado + filas de otros usuarios + filas del usuario actual
             const updatedRows = [
               ['userId', 'preguntaId', 'nivel', 'ultimaRepaso', 'aciertosConsecutivos', 'puntosTotales', 'insignias'],
               ...otherUsersRows,
               ...userRows
             ];
+
             console.log('Saving to Sheets:', JSON.stringify({
               userId: userId.value,
               progresos: progresos.value,
               puntosTotales: puntosTotales.value,
               insignias: insignias.value
             }));
+
             const updateResponse = await fetch(
               `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId.value}/values/Progresos!A1:G${updatedRows.length}?valueInputOption=RAW`,
               {
@@ -682,12 +709,12 @@
 
         // Cargar todos los datos de Sheets
         const cargarDatosSheets = async () => {
-          const areasData = await fetchSheetData('Areas', 'A:D'); // Actualizado para incluir icono
+          const areasData = await fetchSheetData('Areas', 'A:D');
           areas.value = areasData.slice(1).map(row => ({
             id: parseInt(row[0]),
             nombre: row[1],
             color: row[2] || 'bg-gray-200',
-            icono: row[3] || '' // Nueva propiedad icono
+            icono: row[3] || ''
           }));
           console.log('Areas loaded:', areas.value);
 
@@ -698,15 +725,16 @@
             nombre: row[2]
           }));
 
-          const temasData = await fetchSheetData('Temas', 'A:D'); // Actualizado para incluir imagen
+          const temasData = await fetchSheetData('Temas', 'A:D');
           temas.value = temasData.slice(1).map(row => ({
             id: parseInt(row[0]),
             conocimientoId: parseInt(row[1]),
             nombre: row[2],
-            imagen: row[3] || '' // Nueva propiedad imagen
+            imagen: row[3] || ''
           }));
+          console.log('Temas loaded:', temas.value);
 
-          const preguntasData = await fetchSheetData('Preguntas', 'A:K');
+          const preguntasData = await fetchSheetData('Preguntas', 'A:L');
           preguntas.value = preguntasData.slice(1).map(row => {
             let opciones = {};
             try { opciones = row[4] ? JSON.parse(row[4]) : {}; } catch (e) { console.warn('Error parsing opciones:', row[4]); }
@@ -721,9 +749,11 @@
               ordenCorrecto: row[7] ? row[7].split(',').map(s => parseInt(s.trim())) : [],
               textoBase: row[8],
               keywords: row[9] ? row[9].split(',').map(s => s.trim()) : [],
-              explanation: row[10]
+              explanation: row[10],
+              imagen: row[11] || '' // Nueva propiedad imagen
             };
           });
+          console.log('Preguntas loaded:', preguntas.value);
         };
 
         const toggleExpand = (tipo, id) => {
@@ -756,7 +786,16 @@
           return (intervalos[nivel] || 0) * 24 * 60 * 60 * 1000;
         };
 
-        // Guardar progresos
+        // Cargar datos iniciales
+        onMounted(async () => {
+          if (await cargarCredenciales()) {
+            await cargarDatosSheets();
+            cargarUserId();
+          }
+          window.scrollTo(0, 0);
+        });
+
+        // Guardar progresos (en Sheets y localStorage como respaldo)
         const guardarProgresos = () => {
           guardarProgresosEnSheets();
           localStorage.setItem('progresos', JSON.stringify(progresos.value));
@@ -765,12 +804,8 @@
         };
 
         // Preguntas pendientes
+        const preguntasPendientes = ref([]);
         const calcularPendientes = () => {
-          if (!preguntas.value.length || !progresos.value.length) {
-            console.log('No hay preguntas o progresos cargados, inicializando preguntasPendientes como vacío');
-            preguntasPendientes.value = [];
-            return;
-          }
           const hoy = new Date();
           progresos.value.forEach(prog => {
             const pregunta = preguntas.value.find(p => p.id === prog.id);
@@ -921,7 +956,7 @@
                   const inputValue = ref('');
                   const handleInput = (event) => {
                     inputValue.value = event.target.value;
-                    props.pregunta && (respuestaSeleccionada[pregunta.id] = inputValue.value);
+                    props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
                   };
                   return { inputValue, handleInput };
                 },
@@ -943,7 +978,7 @@
                 const inputValue = ref('');
                 const handleInput = (event) => {
                   inputValue.value = event.target.value;
-                  props.pregunta && (respuestaSeleccionada[pregunta.id] = inputValue.value);
+                  props.pregunta && (respuestaSeleccionada[props.pregunta.id] = inputValue.value);
                 };
                 return { inputValue, handleInput };
               },
@@ -1116,7 +1151,7 @@
           iniciarCuestionario,
           responderPregunta,
           siguientePregunta,
-          finalizarRespuesta,
+          final suspicionRespuesta,
           cerrarModal,
           confirmarReset,
           guardarCredenciales,
