@@ -343,7 +343,7 @@ createApp({
           aciertosConsecutivos: parseInt(row[4] || 0)
         }));
         puntosTotales.value = userRows.length > 0 ? parseInt(userRows[0][5] || 0) : 0;
-        insignias.value = userRows.length > 0 && row[6] ? JSON.parse(userRows[0][6] || '[]') : [];
+        insignias.value = userRows.length > 0 && userRows[0][6] ? JSON.parse(userRows[0][6] || '[]') : [];
         console.log('Progresos fetched:', progresos.value);
 
         // Inicializar progresos para preguntas nuevas
