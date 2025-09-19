@@ -366,14 +366,21 @@
     </section>
 
     <!-- Botón Reset -->
-    <div class="text-center mt-6">
-      <button @click="mostrarModalReset = true"
-              class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
-        Resetear Progresos
-      </button>
-    </div>
+    <div v-if="vistaActual === 'progresos'" class="mt-4 flex space-x-4">
+        <button
+          @click="mostrarModalReset = true"
+          class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+        >
+          Resetear Progresos
+        </button>
+        <button
+          @click="resetearCredenciales"
+          class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+        >
+          Resetear Credenciales
+        </button>
+      </div>
   </div>
-
 <script>
 const { createApp, ref, onMounted, reactive } = Vue;
 
@@ -580,6 +587,26 @@ createApp({
       cargarUserId();
     };
 
+    // Resetear credenciales
+    const resetearCredenciales = () => {
+      console.log('Resetting credentials');
+      localStorage.removeItem('spreadsheetId');
+      localStorage.removeItem('apiKey');
+      localStorage.removeItem('clientId');
+      localStorage.removeItem('accessToken');
+      tempSpreadsheetId.value = '';
+      tempApiKey.value = '';
+      tempClientId.value = '';
+      spreadsheetId.value = '';
+      apiKey.value = '';
+      clientId.value = '';
+      accessToken.value = null;
+      isSignedIn.value = false;
+      window.googleAuthClient = null;
+      mostrarModalCredenciales.value = true;
+      console.log('Credentials and access token cleared, showing credentials modal');
+    };
+
     // Generar o cargar userId
     const cargarUserId = () => {
       let savedUserId = localStorage.getItem('userId');
@@ -650,12 +677,12 @@ createApp({
             texto: row[3],
             opciones,
             correcta: row[5],
-            elementos: row[10] ? row[6].split(',').map(s => s.trim()) : [],
-            ordenCorrecto: row[11] ? row[7].split(',').map(s => parseInt(s.trim())) : [],
+            elementos: row[6] ? row[6].split(',').map(s => s.trim()) : [],
+            ordenCorrecto: row[7] ? row[7].split(',').map(s => parseInt(s.trim())) : [],
             textoBase: row[8],
             keywords: row[9] ? row[9].split(',').map(s => s.trim()) : [],
-            explanation: row[6],
-            imagen: row[7] || ''
+            explanation: row[10],
+            imagen: row[11] || ''
           };
         });
         console.log('Preguntas loaded:', preguntas.value);
@@ -1264,6 +1291,7 @@ createApp({
       finalizarRespuesta,
       cerrarModal,
       confirmarReset,
+      resetearCredenciales,
       guardarCredenciales,
       guardarUserId,
       iniciarSesionGoogle,
@@ -1292,6 +1320,7 @@ createApp({
   }
 }).mount('#app');
 </script>
+
 
 </body>
 </html>
