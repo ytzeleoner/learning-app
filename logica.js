@@ -1,4 +1,3 @@
-<script>
 const { createApp, ref, onMounted, reactive } = Vue;
 
 createApp({
@@ -944,4 +943,3 @@ createApp({
     };
   }
 }).mount('#app');
-</script>
