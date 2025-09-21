@@ -306,12 +306,12 @@ createApp({
             texto: row[3],
             opciones,
             correcta: row[5],
-            elementos: row[6] ? row[6].split(',').map(s => s.trim()) : [],
-            ordenCorrecto: row[7] ? row[7].split(',').map(s => parseInt(s.trim())) : [],
-            textoBase: row[8],
+            elementos: row[7] ? row[7].split(',').map(s => s.trim()) : [],
+            ordenCorrecto: row[8] ? row[8].split(',').map(s => parseInt(s.trim())) : [],
+            textoBase: row[9],
             keywords: row[9] ? row[9].split(',').map(s => s.trim()) : [],
-            explanation: row[10],
-            imagen: row[11] || ''
+            explanation: row[6],
+            imagen: row[10] || ''
           };
         });
         console.log('Preguntas loaded:', preguntas.value);
